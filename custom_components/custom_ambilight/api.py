@@ -200,7 +200,18 @@ class MyApi:
                     },
                 )
             # Determine the brightness value
-            brightness = kwargs.get(ATTR_BRIGHTNESS) or current_brightness or 255
+            # If brightness is explicitly provided, use it
+            # Otherwise, try to preserve the current brightness
+            # If current brightness is not available, try to use the previous state brightness
+            # Only use 255 as a last resort
+            if kwargs.get(ATTR_BRIGHTNESS) is not None:
+                brightness = kwargs.get(ATTR_BRIGHTNESS)
+            elif current_brightness is not None:
+                brightness = current_brightness
+            elif self.previous_state and self.previous_state.get("brightness") is not None:
+                brightness = self.previous_state.get("brightness")
+            else:
+                brightness = 255
 
             # Determine the hue and saturation values
             if kwargs.get(ATTR_HS_COLOR):
