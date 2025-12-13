@@ -1,17 +1,15 @@
 {
-  "domain": "custom_ambilight",
-  "name": "Custom Ambilight",
-  "codeowners": [
-    "@aegjoyce"
-  ],
-  "config_flow": true,
-  "dependencies": [],
-  "documentation": "https://www.home-assistant.io/integrations/custom_ambilight",
-  "homekit": {},
-  "iot_class": "local_polling",
-  "issue_tracker": "https://github.com/aegjoyce/custom-ambilight/issues",
-  "requirements": [],
-  "ssdp": [],
-  "version": "0.2.11",
-  "zeroconf": []
+	"domain": "custom_ambilight_forked",
+	"name": "Custom Ambilight (Forked)",
+	"codeowners": ["@aegjoyce"],
+	"config_flow": true,
+	"dependencies": [],
+	"documentation": "https://www.home-assistant.io/integrations/custom_ambilight",
+	"homekit": {},
+	"iot_class": "local_polling",
+	"issue_tracker": "https://github.com/aegjoyce/custom-ambilight/issues",
+	"requirements": [],
+	"ssdp": [],
+	"version": "0.2.11",
+	"zeroconf": []
 }

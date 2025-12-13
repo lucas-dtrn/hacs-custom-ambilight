@@ -1,3 +1,3 @@
 """Constants for the Custom Ambilight integration."""
 
-DOMAIN = "custom_ambilight"
+DOMAIN = "custom_ambilight_forked"

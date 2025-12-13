@@ -34,7 +34,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = DataUpdateCoordinator(
         hass,
         _LOGGER,
-        name="custom_ambilight",
+        name="custom_ambilight_forked",
         update_method=api.get_data,
         update_interval=timedelta(seconds=30),
     )
