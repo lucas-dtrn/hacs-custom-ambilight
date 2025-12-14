@@ -34,6 +34,7 @@ class MyApi:
         self.EFFECTS = EFFECTS
         self.previous_state = None
         self._data = {}
+        self._turn_on_in_progress = False
 
     async def get_data(self) -> Any:
         """Fetch data from the API."""
@@ -183,111 +184,125 @@ class MyApi:
 
     async def turn_on(self, **kwargs):
         """Turn the light on."""
-        # Get the current brightness, hue, and saturation
-        current_brightness = self.get_brightness()
-        current_hs_color = self.get_hs_color()
+        # Prevent recursive calls
+        if self._turn_on_in_progress:
+            return
+        self._turn_on_in_progress = True
+        
+        try:
+            # Get the current brightness, hue, and saturation
+            current_brightness = self.get_brightness()
+            current_hs_color = self.get_hs_color()
 
-        # Check if brightness or color is in kwargs
-        if kwargs.get(ATTR_BRIGHTNESS) or kwargs.get(ATTR_HS_COLOR):
-            # If the light is off, activate the Natural effect first
-            if not self.get_is_on():
-                await self.send_data(
-                    "ambilight/currentconfiguration",
-                    {
-                        "styleName": "FOLLOW_VIDEO",
-                        "isExpert": False,
-                        "menuSetting": "NATURAL",
-                    },
-                )
-            # Determine the brightness value
-            # If brightness is explicitly provided, use it
-            # Otherwise, try to preserve the current brightness
-            # If current brightness is not available, try to use the previous state brightness
-            # Only use 255 as a last resort
-            if kwargs.get(ATTR_BRIGHTNESS) is not None:
-                brightness = kwargs.get(ATTR_BRIGHTNESS)
-            elif current_brightness is not None:
-                brightness = current_brightness
-            elif self.previous_state and self.previous_state.get("brightness") is not None:
-                brightness = self.previous_state.get("brightness")
-            else:
-                brightness = 255
-
-            # Determine the hue and saturation values
-            if kwargs.get(ATTR_HS_COLOR):
-                hue, saturation = kwargs.get(ATTR_HS_COLOR)
-            elif current_hs_color:
-                # If color is not provided but current_hs_color is not None, use the previous values
-                hue, saturation = current_hs_color
-            elif self.previous_state and self.previous_state.get("hs_color"):
-                # If current_hs_color is None (e.g., effect is active), try to use the last known color from previous_state
-                hue, saturation = self.previous_state.get("hs_color")
-            else:
-                # If both color and current_hs_color are None, set default values to white (neutral)
-                # This happens when brightness is changed while an effect is active and no previous color is known
-                hue, saturation = 0, 0
-
-            # Convert hue and saturation to the range 0-255
-            hue = int((hue / 360) * 255)
-            saturation = int((saturation / 100) * 255)
-
-            # Send the color data to the API
-            color_data = {
-                "color": {
-                    "hue": hue,
-                    "saturation": saturation,
-                    "brightness": brightness,
-                },
-                "colorDelta": {"hue": 0, "saturation": 0, "brightness": 0},
-                "speed": 255,
-                "algorithm": "MANUAL_HUE",
-            }
-            await self.send_data("ambilight/lounge", color_data)
-            
-            # Save the current color and brightness for later use (e.g., when switching to effect mode)
-            # Convert back from 0-255 range to 0-360/0-100 range for storage
-            stored_hue = round((hue / 255) * 360)
-            stored_saturation = round((saturation / 255) * 100)
-            self.previous_state = {
-                "brightness": brightness,
-                "hs_color": (stored_hue, stored_saturation),
-                "effect": None,
-            }
-
-        elif kwargs.get(ATTR_EFFECT):
-            friendly_name = kwargs.get(ATTR_EFFECT)
-            for effect in self.EFFECTS.values():
-                if effect["friendly_name"] == friendly_name:
-                    # Check if the light is currently in HS mode
-                    if self.get_effect() is None:
-                        # Save the current color and brightness before switching to effect mode
-                        # This allows us to restore the color when brightness is changed later
-                        self.previous_state = {
-                            "brightness": self.get_brightness(),
-                            "hs_color": self.get_hs_color(),
-                            "effect": None,
-                        }
-                        # If it is, turn off the light first
-                        await self.send_data("ambilight/power", {"power": "off"})
-                    # Then apply the new effect
+            # Check if brightness or color is in kwargs
+            if kwargs.get(ATTR_BRIGHTNESS) or kwargs.get(ATTR_HS_COLOR):
+                # If the light is off, activate the Natural effect first
+                if not self.get_is_on():
                     await self.send_data(
-                        effect["endpoint"],
-                        effect["data"],
+                        "ambilight/currentconfiguration",
+                        {
+                            "styleName": "FOLLOW_VIDEO",
+                            "isExpert": False,
+                            "menuSetting": "NATURAL",
+                        },
                     )
-                    break
+                # Determine the brightness value
+                # If brightness is explicitly provided, use it
+                # Otherwise, try to preserve the current brightness
+                # If current brightness is not available, try to use the previous state brightness
+                # Only use 255 as a last resort
+                if kwargs.get(ATTR_BRIGHTNESS) is not None:
+                    brightness = kwargs.get(ATTR_BRIGHTNESS)
+                elif current_brightness is not None:
+                    brightness = current_brightness
+                elif self.previous_state and self.previous_state.get("brightness") is not None:
+                    brightness = self.previous_state.get("brightness")
+                else:
+                    brightness = 255
 
-        # If no kwargs are provided and it's not a recursive call, restore the previous state
-        elif self.previous_state and not self.get_is_on():
-            # If the light is currently off and there's a stored state, restore it
-            if any(
-                key in self.previous_state
-                for key in [ATTR_BRIGHTNESS, ATTR_HS_COLOR, ATTR_EFFECT]
-            ):
-                await self.turn_on(**self.previous_state)
-        else:
-            # Default behavior when previous_state doesn't contain any key
-            # For example, turn on the light with default brightness, color, and effect
-            await self.turn_on(brightness=255, hs_color=(360, 0))
+                # Determine the hue and saturation values
+                if kwargs.get(ATTR_HS_COLOR):
+                    hue, saturation = kwargs.get(ATTR_HS_COLOR)
+                elif current_hs_color:
+                    # If color is not provided but current_hs_color is not None, use the previous values
+                    hue, saturation = current_hs_color
+                elif self.previous_state and self.previous_state.get("hs_color"):
+                    # If current_hs_color is None (e.g., effect is active), try to use the last known color from previous_state
+                    hue, saturation = self.previous_state.get("hs_color")
+                else:
+                    # If both color and current_hs_color are None, set default values to white (neutral)
+                    # This happens when brightness is changed while an effect is active and no previous color is known
+                    hue, saturation = 0, 0
+
+                # Convert hue and saturation to the range 0-255
+                hue = int((hue / 360) * 255)
+                saturation = int((saturation / 100) * 255)
+
+                # Send the color data to the API
+                color_data = {
+                    "color": {
+                        "hue": hue,
+                        "saturation": saturation,
+                        "brightness": brightness,
+                    },
+                    "colorDelta": {"hue": 0, "saturation": 0, "brightness": 0},
+                    "speed": 255,
+                    "algorithm": "MANUAL_HUE",
+                }
+                await self.send_data("ambilight/lounge", color_data)
+                
+                # Save the current color and brightness for later use (e.g., when switching to effect mode)
+                # Convert back from 0-255 range to 0-360/0-100 range for storage
+                stored_hue = round((hue / 255) * 360)
+                stored_saturation = round((saturation / 255) * 100)
+                self.previous_state = {
+                    "brightness": brightness,
+                    "hs_color": (stored_hue, stored_saturation),
+                    "effect": None,
+                }
+
+            elif kwargs.get(ATTR_EFFECT):
+                friendly_name = kwargs.get(ATTR_EFFECT)
+                for effect in self.EFFECTS.values():
+                    if effect["friendly_name"] == friendly_name:
+                        # Check if the light is currently in HS mode
+                        if self.get_effect() is None:
+                            # Save the current color and brightness before switching to effect mode
+                            # This allows us to restore the color when brightness is changed later
+                            self.previous_state = {
+                                "brightness": self.get_brightness(),
+                                "hs_color": self.get_hs_color(),
+                                "effect": None,
+                            }
+                            # If it is, turn off the light first
+                            await self.send_data("ambilight/power", {"power": "off"})
+                        # Then apply the new effect
+                        await self.send_data(
+                            effect["endpoint"],
+                            effect["data"],
+                        )
+                        break
+
+            # If no kwargs are provided, restore the previous state or use defaults
+            elif not self.get_is_on():
+                # Light is off, try to restore previous state or use defaults
+                if self.previous_state and any(
+                    key in self.previous_state
+                    for key in [ATTR_BRIGHTNESS, ATTR_HS_COLOR, ATTR_EFFECT]
+                ):
+                    # Temporarily reset the flag to allow the recursive call
+                    self._turn_on_in_progress = False
+                    await self.turn_on(**self.previous_state)
+                    return
+                else:
+                    # No previous state, use defaults
+                    # Temporarily reset the flag to allow the recursive call
+                    self._turn_on_in_progress = False
+                    await self.turn_on(brightness=255, hs_color=(0, 0))
+                    return
+            # If light is already on and no kwargs provided, do nothing
+        finally:
+            self._turn_on_in_progress = False
 
     async def turn_off(self):
         """Turn the light off."""
