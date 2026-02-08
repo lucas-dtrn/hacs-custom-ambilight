@@ -10,6 +10,6 @@
 	"issue_tracker": "https://github.com/aegjoyce/custom-ambilight/issues",
 	"requirements": [],
 	"ssdp": [],
-	"version": "0.2.11",
+	"version": "0.3.0-beta.1",
 	"zeroconf": []
 }
