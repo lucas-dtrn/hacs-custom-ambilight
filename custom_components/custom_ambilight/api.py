@@ -54,6 +54,9 @@ class MyApi:
             },
         }
         if self._data == glitch_state:
+            # Don't restore state if turn_on is already in progress to avoid recursion
+            if self._turn_on_in_progress:
+                return self._data
             # If it does, save the previous state
             self.previous_state = {
                 "brightness": self.get_brightness(),
@@ -162,7 +165,11 @@ class MyApi:
             # Return the hs color as a tuple
             return (hue, saturation)
         else:
-            # If the light is not in normal hs color mode, return None
+            # If the light is not in normal hs color mode, try to return the previous state color
+            # This ensures the brightness slider can be colored even when an effect is active
+            if self.previous_state and self.previous_state.get("hs_color") is not None:
+                return self.previous_state.get("hs_color")
+            # If no previous state is available, return None
             return None
 
     def get_effect(self):
@@ -195,7 +202,7 @@ class MyApi:
             current_hs_color = self.get_hs_color()
 
             # Check if brightness or color is in kwargs
-            if kwargs.get(ATTR_BRIGHTNESS) or kwargs.get(ATTR_HS_COLOR):
+            if kwargs.get(ATTR_BRIGHTNESS) is not None or kwargs.get(ATTR_HS_COLOR) is not None:
                 # If the light is off, activate the Natural effect first
                 if not self.get_is_on():
                     await self.send_data(
@@ -286,16 +293,29 @@ class MyApi:
             # If no kwargs are provided, restore the previous state or use defaults
             elif not self.get_is_on():
                 # Light is off, try to restore previous state or use defaults
-                if self.previous_state and any(
-                    key in self.previous_state
-                    for key in [ATTR_BRIGHTNESS, ATTR_HS_COLOR, ATTR_EFFECT]
-                ):
+                # Check if previous_state has valid (non-None) values
+                restore_kwargs = {}
+                
+                if self.previous_state:
+                    if self.previous_state.get(ATTR_BRIGHTNESS) is not None:
+                        restore_kwargs[ATTR_BRIGHTNESS] = self.previous_state.get(ATTR_BRIGHTNESS)
+                    if self.previous_state.get(ATTR_HS_COLOR) is not None:
+                        restore_kwargs[ATTR_HS_COLOR] = self.previous_state.get(ATTR_HS_COLOR)
+                    if self.previous_state.get(ATTR_EFFECT) is not None:
+                        restore_kwargs[ATTR_EFFECT] = self.previous_state.get(ATTR_EFFECT)
+                
+                # If we have brightness or color or effect to restore, use them
+                # If only brightness is available, use it with default color (0, 0)
+                if restore_kwargs:
+                    # If brightness is set but no color, use default color
+                    if ATTR_BRIGHTNESS in restore_kwargs and ATTR_HS_COLOR not in restore_kwargs:
+                        restore_kwargs[ATTR_HS_COLOR] = (0, 0)
                     # Temporarily reset the flag to allow the recursive call
                     self._turn_on_in_progress = False
-                    await self.turn_on(**self.previous_state)
+                    await self.turn_on(**restore_kwargs)
                     return
                 else:
-                    # No previous state, use defaults
+                    # No previous state or no valid values, use defaults
                     # Temporarily reset the flag to allow the recursive call
                     self._turn_on_in_progress = False
                     await self.turn_on(brightness=255, hs_color=(0, 0))
@@ -307,9 +327,22 @@ class MyApi:
     async def turn_off(self):
         """Turn the light off."""
         # Store the current Home Assistant-reported state before turning off the light
+        # Use brightness from get_brightness() if available, otherwise keep previous brightness
+        current_brightness = self.get_brightness()
+        if current_brightness is None and self.previous_state and self.previous_state.get("brightness") is not None:
+            # If brightness is not available but we have a previous brightness, use that
+            current_brightness = self.previous_state.get("brightness")
+        
+        # Use hs_color from get_hs_color() if available, otherwise keep previous hs_color
+        current_hs_color = self.get_hs_color()
+        if current_hs_color is None and self.previous_state and self.previous_state.get("hs_color") is not None:
+            # If hs_color is not available but we have a previous hs_color, use that
+            current_hs_color = self.previous_state.get("hs_color")
+        
+        # Always save the brightness and color, even if they are None (will use defaults on turn_on)
         self.previous_state = {
-            "brightness": self.get_brightness(),
-            "hs_color": self.get_hs_color(),
+            "brightness": current_brightness,
+            "hs_color": current_hs_color,
             "effect": self.get_effect(),
         }
         # If the current effect is None, switch to the Natural effect

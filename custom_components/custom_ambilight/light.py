@@ -55,7 +55,12 @@ class CustomAmbilightLight(CoordinatorEntity, LightEntity):
     @property
     def hs_color(self):
         """Return the hue and saturation color value [float, float]."""
-        return self.api.get_hs_color()
+        hs_color = self.api.get_hs_color()
+        # Always return a valid hs_color tuple to ensure the brightness slider is colored
+        # If None is returned (e.g., when light is off), return white (0, 0) as default
+        if hs_color is None:
+            return (0, 0)
+        return hs_color
 
     @property
     def effect_list(self):
@@ -69,14 +74,15 @@ class CustomAmbilightLight(CoordinatorEntity, LightEntity):
 
     async def async_turn_on(self, **kwargs):
         """Turn the light on."""
-        await self.coordinator.async_refresh()
+        # Don't refresh before turn_on to avoid recursion if get_data calls turn_on
         await self.api.turn_on(**kwargs)
+        # Refresh after to update the state
         await self.coordinator.async_refresh()
 
     async def async_turn_off(self):
         """Turn the light off."""
-        await self.coordinator.async_refresh()
         await self.api.turn_off()
+        # Refresh after to update the state
         await self.coordinator.async_refresh()
 
 
