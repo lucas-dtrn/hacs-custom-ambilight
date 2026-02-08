@@ -21,7 +21,28 @@
     "entity": {
         "light": {
             "ambilight": {
-                "name": "Ambilight"
+                "name": "Ambilight",
+                "state_attributes": {
+                    "effect": {
+                        "state": {
+                            "standard": "Standard",
+                            "natural": "Natural",
+                            "sports": "Sports",
+                            "vivid": "Vivid",
+                            "game": "Game",
+                            "comfort": "Comfort",
+                            "relax": "Relax",
+                            "retro": "Retro",
+                            "lumina": "Lumina",
+                            "colora": "Colora",
+                            "spectrum": "Spectrum",
+                            "scanner_clockwise": "Scanner - Clockwise",
+                            "scanner_alternating": "Scanner - Alternating",
+                            "rhythm": "Rhythm",
+                            "random": "Random"
+                        }
+                    }
+                }
             }
         }
     }

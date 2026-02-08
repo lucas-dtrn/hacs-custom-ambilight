@@ -16,6 +16,23 @@ from .effects import EFFECTS
 _LOGGER = logging.getLogger(__name__)
 # Define the rate limit (in seconds)
 RATE_LIMIT = 0.1
+LEGACY_EFFECT_ALIASES = {
+    "Standard": "standard",
+    "Natural": "natural",
+    "Sports": "sports",
+    "Vivid": "vivid",
+    "Game": "game",
+    "Comfort": "comfort",
+    "Relax": "relax",
+    "Retro": "retro",
+    "Lumina": "lumina",
+    "Colora": "colora",
+    "Spectrum": "spectrum",
+    "Scanner - Clockwise": "scanner_clockwise",
+    "Scanner - Alternating": "scanner_alternating",
+    "Rhythm": "rhythm",
+    "Random": "random",
+}
 
 
 class MyApi:
@@ -270,6 +287,7 @@ class MyApi:
 
             elif kwargs.get(ATTR_EFFECT):
                 friendly_name = kwargs.get(ATTR_EFFECT)
+                friendly_name = LEGACY_EFFECT_ALIASES.get(friendly_name, friendly_name)
                 for effect in self.EFFECTS.values():
                     if effect["friendly_name"] == friendly_name:
                         # Check if the light is currently in HS mode

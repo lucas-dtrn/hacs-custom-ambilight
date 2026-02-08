@@ -1,6 +1,6 @@
 EFFECTS = {
     "STANDARD": {
-        "friendly_name": "Standard",
+        "friendly_name": "standard",
         "styleName": "FOLLOW_VIDEO",
         "endpoint": "ambilight/currentconfiguration",
         "data": {
@@ -10,7 +10,7 @@ EFFECTS = {
         },
     },
     "NATURAL": {
-        "friendly_name": "Natural",
+        "friendly_name": "natural",
         "styleName": "FOLLOW_VIDEO",
         "endpoint": "ambilight/currentconfiguration",
         "data": {
@@ -20,7 +20,7 @@ EFFECTS = {
         },
     },
     "IMMERSIVE": {
-        "friendly_name": "Sports",
+        "friendly_name": "sports",
         "styleName": "FOLLOW_VIDEO",
         "endpoint": "ambilight/currentconfiguration",
         "data": {
@@ -30,7 +30,7 @@ EFFECTS = {
         },
     },
     "VIVID": {
-        "friendly_name": "Vivid",
+        "friendly_name": "vivid",
         "styleName": "FOLLOW_VIDEO",
         "endpoint": "ambilight/currentconfiguration",
         "data": {
@@ -40,13 +40,13 @@ EFFECTS = {
         },
     },
     "GAME": {
-        "friendly_name": "Game",
+        "friendly_name": "game",
         "styleName": "FOLLOW_VIDEO",
         "endpoint": "ambilight/currentconfiguration",
         "data": {"styleName": "FOLLOW_VIDEO", "isExpert": False, "menuSetting": "GAME"},
     },
     "COMFORT": {
-        "friendly_name": "Comfort",
+        "friendly_name": "comfort",
         "styleName": "FOLLOW_VIDEO",
         "endpoint": "ambilight/currentconfiguration",
         "data": {
@@ -56,7 +56,7 @@ EFFECTS = {
         },
     },
     "RELAX": {
-        "friendly_name": "Relax",
+        "friendly_name": "relax",
         "styleName": "FOLLOW_VIDEO",
         "endpoint": "ambilight/currentconfiguration",
         "data": {
@@ -66,7 +66,7 @@ EFFECTS = {
         },
     },
     "VU_METER": {
-        "friendly_name": "Retro",
+        "friendly_name": "retro",
         "styleName": "FOLLOW_AUDIO",
         "endpoint": "ambilight/currentconfiguration",
         "data": {
@@ -76,7 +76,7 @@ EFFECTS = {
         },
     },
     "ENERGY_ADAPTIVE_BRIGHTNESS": {
-        "friendly_name": "Lumina",
+        "friendly_name": "lumina",
         "styleName": "FOLLOW_AUDIO",
         "endpoint": "ambilight/currentconfiguration",
         "data": {
@@ -86,7 +86,7 @@ EFFECTS = {
         },
     },
     "ENERGY_ADAPTIVE_COLORS": {
-        "friendly_name": "Colora",
+        "friendly_name": "colora",
         "styleName": "FOLLOW_AUDIO",
         "endpoint": "ambilight/currentconfiguration",
         "data": {
@@ -96,7 +96,7 @@ EFFECTS = {
         },
     },
     "SPECTRUM_ANALYSER": {
-        "friendly_name": "Spectrum",
+        "friendly_name": "spectrum",
         "styleName": "FOLLOW_AUDIO",
         "endpoint": "ambilight/currentconfiguration",
         "data": {
@@ -106,7 +106,7 @@ EFFECTS = {
         },
     },
     "KNIGHT_RIDER_CLOCKWISE": {
-        "friendly_name": "Scanner - Clockwise",
+        "friendly_name": "scanner_clockwise",
         "styleName": "FOLLOW_AUDIO",
         "endpoint": "ambilight/currentconfiguration",
         "data": {
@@ -116,7 +116,7 @@ EFFECTS = {
         },
     },
     "KNIGHT_RIDER_ALTERNATING": {
-        "friendly_name": "Scanner - Alternating",
+        "friendly_name": "scanner_alternating",
         "styleName": "FOLLOW_AUDIO",
         "endpoint": "ambilight/currentconfiguration",
         "data": {
@@ -126,7 +126,7 @@ EFFECTS = {
         },
     },
     "RANDOM_PIXEL_FLASH": {
-        "friendly_name": "Rhythm",
+        "friendly_name": "rhythm",
         "styleName": "FOLLOW_AUDIO",
         "endpoint": "ambilight/currentconfiguration",
         "data": {
@@ -136,7 +136,7 @@ EFFECTS = {
         },
     },
     "MODE_RANDOM": {
-        "friendly_name": "Random",
+        "friendly_name": "random",
         "styleName": "FOLLOW_AUDIO",
         "endpoint": "ambilight/currentconfiguration",
         "data": {

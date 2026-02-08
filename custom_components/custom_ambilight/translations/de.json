@@ -1,0 +1,49 @@
+{
+    "config": {
+        "abort": {
+            "already_configured": "Gerät ist bereits konfiguriert"
+        },
+        "error": {
+            "cannot_connect": "Verbindung fehlgeschlagen",
+            "invalid_auth": "Ungültige Anmeldedaten",
+            "unknown": "Unerwarteter Fehler"
+        },
+        "step": {
+            "user": {
+                "data": {
+                    "host": "Host",
+                    "password": "Passwort",
+                    "username": "Benutzername"
+                }
+            }
+        }
+    },
+    "entity": {
+        "light": {
+            "ambilight": {
+                "name": "Ambilight",
+                "state_attributes": {
+                    "effect": {
+                        "state": {
+                            "standard": "Standard",
+                            "natural": "Natürlich",
+                            "sports": "Sport",
+                            "vivid": "Lebhaft",
+                            "game": "Spiel",
+                            "comfort": "Komfort",
+                            "relax": "Entspannt",
+                            "retro": "Retro",
+                            "lumina": "Lumina",
+                            "colora": "Colora",
+                            "spectrum": "Spektrum",
+                            "scanner_clockwise": "Scanner - Im Uhrzeigersinn",
+                            "scanner_alternating": "Scanner - Alternierend",
+                            "rhythm": "Rhythmus",
+                            "random": "Zufall"
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
