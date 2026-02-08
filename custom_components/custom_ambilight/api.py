@@ -16,47 +16,6 @@ from .effects import EFFECTS
 _LOGGER = logging.getLogger(__name__)
 # Define the rate limit (in seconds)
 RATE_LIMIT = 0.1
-EFFECT_NAME_ALIASES = {
-    # Legacy English effect names
-    "Standard": "standard",
-    "Natural": "natural",
-    "Sports": "sports",
-    "Vivid": "vivid",
-    "Game": "game",
-    "Comfort": "comfort",
-    "Relax": "relax",
-    "Retro": "retro",
-    "Lumina": "lumina",
-    "Colora": "colora",
-    "Spectrum": "spectrum",
-    "Scanner - Clockwise": "scanner_clockwise",
-    "Scanner - Alternating": "scanner_alternating",
-    "Rhythm": "rhythm",
-    "Random": "random",
-    # German UI labels
-    "Natürlich": "natural",
-    "Sport": "sports",
-    "Lebhaft": "vivid",
-    "Spiel": "game",
-    "Komfort": "comfort",
-    "Entspannt": "relax",
-    "Spektrum": "spectrum",
-    "Scanner - Im Uhrzeigersinn": "scanner_clockwise",
-    "Scanner - Alternierend": "scanner_alternating",
-    "Rhythmus": "rhythm",
-    "Zufall": "random",
-    # Portuguese UI labels
-    "Desporto": "sports",
-    "Vivo": "vivid",
-    "Jogo": "game",
-    "Conforto": "comfort",
-    "Relaxar": "relax",
-    "Espectro": "spectrum",
-    "Scanner - No sentido dos ponteiros do relógio": "scanner_clockwise",
-    "Scanner - Alternado": "scanner_alternating",
-    "Ritmo": "rhythm",
-    "Aleatório": "random",
-}
 
 
 class MyApi:
@@ -311,7 +270,6 @@ class MyApi:
 
             elif kwargs.get(ATTR_EFFECT):
                 friendly_name = kwargs.get(ATTR_EFFECT)
-                friendly_name = EFFECT_NAME_ALIASES.get(friendly_name, friendly_name)
                 for effect in self.EFFECTS.values():
                     if effect["friendly_name"] == friendly_name:
                         # Check if the light is currently in HS mode

@@ -33,6 +33,7 @@ class CustomAmbilightLight(CoordinatorEntity, LightEntity):
         self._attr_unique_id = entry_id  # Use the config entry ID as the unique ID
         self._effect_translations = {}
         self._effect_translation_language = None
+        self._effect_translation_reverse = {}
 
     async def async_added_to_hass(self) -> None:
         """Handle entity which will be added."""
@@ -55,6 +56,9 @@ class CustomAmbilightLight(CoordinatorEntity, LightEntity):
             key[len(prefix):]: value
             for key, value in translations.items()
             if key.startswith(prefix)
+        }
+        self._effect_translation_reverse = {
+            value: key for key, value in self._effect_translations.items()
         }
         self._effect_translation_language = language
 
@@ -107,6 +111,13 @@ class CustomAmbilightLight(CoordinatorEntity, LightEntity):
 
     async def async_turn_on(self, **kwargs):
         """Turn the light on."""
+        if kwargs.get(ATTR_EFFECT):
+            await self._async_refresh_effect_translations()
+            effect_value = kwargs.get(ATTR_EFFECT)
+            normalized_effect = self._effect_translation_reverse.get(
+                effect_value, effect_value
+            )
+            kwargs[ATTR_EFFECT] = normalized_effect
         # Don't refresh before turn_on to avoid recursion if get_data calls turn_on
         await self.api.turn_on(**kwargs)
         # Refresh after to update the state
