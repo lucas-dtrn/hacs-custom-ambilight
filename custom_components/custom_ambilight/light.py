@@ -109,6 +109,23 @@ class CustomAmbilightLight(CoordinatorEntity, LightEntity):
             return None
         return self._effect_translations.get(effect, effect)
 
+    @property
+    def extra_state_attributes(self):
+        """Return extra state attributes."""
+        effect_icons = {}
+        for effect in self.api.EFFECTS.values():
+            icon = effect.get("icon")
+            if not icon:
+                continue
+            name = effect["friendly_name"]
+            effect_icons[name] = icon
+            translated_name = self._effect_translations.get(name)
+            if translated_name and translated_name not in effect_icons:
+                effect_icons[translated_name] = icon
+        if not effect_icons:
+            return {}
+        return {"effect_icons": effect_icons}
+
     async def async_turn_on(self, **kwargs):
         """Turn the light on."""
         if kwargs.get(ATTR_EFFECT):
