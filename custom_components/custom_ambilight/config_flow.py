@@ -12,7 +12,12 @@ from homeassistant.const import CONF_HOST, CONF_PASSWORD, CONF_USERNAME, CONF_TY
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 
-from .api import MyApi
+from .api import (
+    CONNECTION_CANNOT_CONNECT,
+    CONNECTION_INVALID_AUTH,
+    CONNECTION_OK,
+    MyApi,
+)
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -52,8 +57,13 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     )
 
     # Validate the API connection (and authentication)
-    if not await api.validate_connection():
+    connection_status = await api.get_connection_status()
+    if connection_status == CONNECTION_CANNOT_CONNECT:
+        raise CannotConnect
+    if connection_status == CONNECTION_INVALID_AUTH:
         raise InvalidAuth
+    if connection_status != CONNECTION_OK:
+        raise UnknownConnectionError
 
     # Return info that you want to store in the config entry.
     return {"title": "Custom Ambilight"}
@@ -92,6 +102,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "cannot_connect"
             except InvalidAuth:
                 errors["base"] = "invalid_auth"
+            except UnknownConnectionError:
+                errors["base"] = "unknown"
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
@@ -115,6 +127,8 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 errors["base"] = "cannot_connect"
             except InvalidAuth:
                 errors["base"] = "invalid_auth"
+            except UnknownConnectionError:
+                errors["base"] = "unknown"
             except Exception:  # pylint: disable=broad-except
                 _LOGGER.exception("Unexpected exception")
                 errors["base"] = "unknown"
@@ -130,3 +144,7 @@ class CannotConnect(HomeAssistantError):
 
 class InvalidAuth(HomeAssistantError):
     """Error to indicate there is invalid auth."""
+
+
+class UnknownConnectionError(HomeAssistantError):
+    """Error to indicate an unexpected API response."""

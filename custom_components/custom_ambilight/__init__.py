@@ -11,7 +11,12 @@ from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 
-from .api import MyApi
+from .api import (
+    CONNECTION_CANNOT_CONNECT,
+    CONNECTION_INVALID_AUTH,
+    CONNECTION_UNKNOWN,
+    MyApi,
+)
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -27,8 +32,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     api = MyApi(entry.data["host"], entry.data["type"], entry.data.get("username"), entry.data.get("password"))
 
     # Validate the API connection
-    if not await api.validate_connection():
-        raise ConfigEntryNotReady
+    connection_status = await api.get_connection_status()
+    if connection_status == CONNECTION_CANNOT_CONNECT:
+        raise ConfigEntryNotReady("Cannot connect to TV JointSpace API")
+    if connection_status == CONNECTION_INVALID_AUTH:
+        raise ConfigEntryNotReady("Invalid TV API credentials for HTTPS")
+    if connection_status == CONNECTION_UNKNOWN:
+        raise ConfigEntryNotReady("Unexpected response from TV JointSpace API")
 
     # Create a data update coordinator
     coordinator = DataUpdateCoordinator(
@@ -43,7 +53,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await coordinator.async_refresh()
 
     if not coordinator.last_update_success:
-        raise ConfigEntryNotReady
+        raise ConfigEntryNotReady("Initial Ambilight data refresh failed")
 
     # Store the data update coordinator for your platforms to access
     coordinator.api = api

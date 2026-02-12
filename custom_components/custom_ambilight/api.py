@@ -18,6 +18,10 @@ from .effects import EFFECTS
 _LOGGER = logging.getLogger(__name__)
 # Define the rate limit (in seconds)
 RATE_LIMIT = 0.1
+CONNECTION_OK = "ok"
+CONNECTION_CANNOT_CONNECT = "cannot_connect"
+CONNECTION_INVALID_AUTH = "invalid_auth"
+CONNECTION_UNKNOWN = "unknown"
 
 
 class MyApi:
@@ -121,33 +125,63 @@ class MyApi:
         result = unpadder.update(result) + unpadder.finalize()
         return result.decode("utf-8")
 
-    async def validate_connection(self) -> bool:
-        """Validate the initial connection."""
+    async def get_connection_status(self) -> str:
+        """Validate connectivity/auth and return a status key."""
+        if self.connection_type == "https" and (
+            not self.username or not self.password
+        ):
+            return CONNECTION_INVALID_AUTH
+
         try:
             response = await self.client.get(f"{self.url}/system")
-            if response.status_code == 200:
-                # Assuming the response is a JSON object
+        except (httpx.ConnectError, httpx.TimeoutException) as err:
+            _LOGGER.warning("Cannot connect to TV at %s: %s", self.url, err)
+            return CONNECTION_CANNOT_CONNECT
+        except httpx.HTTPError as err:
+            _LOGGER.warning("HTTP error while connecting to %s: %s", self.url, err)
+            return CONNECTION_CANNOT_CONNECT
+
+        if response.status_code in (401, 403):
+            return CONNECTION_INVALID_AUTH
+
+        if response.status_code != 200:
+            _LOGGER.warning(
+                "Unexpected status from %s/system: %s",
+                self.url,
+                response.status_code,
+            )
+            return CONNECTION_UNKNOWN
+
+        try:
+            data = response.json()
+        except JSONDecodeError as err:
+            _LOGGER.warning("Failed to parse /system response from %s: %s", self.url, err)
+            return CONNECTION_UNKNOWN
+
+        # Decode encrypted fields when available (best effort).
+        key = b64decode(
+            "ZmVay1EQVFOaZhwQ4Kv81ypLAZNczV9sG4KkseXWn1NEk6cXmPKO/MCa9sryslvLCFMnNe4Z4CPXzToowvhHvA=="
+        )
+        for k, encrypted_value in data.items():
+            if k.endswith("_encrypted"):
+                decrypted_key = k.replace("_encrypted", "")
                 try:
-                    data = response.json()
-                except JSONDecodeError as err:
-                    _LOGGER.error("Failed to parse /system response: %s", err)
-                    return False
-                # Decode the password
-                key = b64decode(
-                    "ZmVay1EQVFOaZhwQ4Kv81ypLAZNczV9sG4KkseXWn1NEk6cXmPKO/MCa9sryslvLCFMnNe4Z4CPXzToowvhHvA=="
-                )
-                for k, encrypted_value in data.items():
-                    if k.endswith("_encrypted"):
-                        decrypted_key = k.replace("_encrypted", "")
-                        decrypted_value = self.cbc_decode(key, encrypted_value.strip())
-                        setattr(self, decrypted_key, decrypted_value)
-                    elif k == "name":
-                        setattr(self, k, encrypted_value)
-                return True
-            return False
-        except Exception as e:
-            _LOGGER.error(f"Failed to connect: {e}")
-            return False
+                    decrypted_value = self.cbc_decode(key, encrypted_value.strip())
+                    setattr(self, decrypted_key, decrypted_value)
+                except Exception as err:  # pylint: disable=broad-except
+                    _LOGGER.debug(
+                        "Could not decode field %s from /system response: %s",
+                        k,
+                        err,
+                    )
+            elif k == "name":
+                setattr(self, k, encrypted_value)
+
+        return CONNECTION_OK
+
+    async def validate_connection(self) -> bool:
+        """Backward compatible connectivity check."""
+        return (await self.get_connection_status()) == CONNECTION_OK
 
     def get_is_on(self):
         """Get the current power status from the data."""
