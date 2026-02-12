@@ -49,11 +49,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         update_interval=timedelta(seconds=30),
     )
 
-    # Fetch initial data
+    # Fetch initial data (best effort).
+    # Some TVs answer /system but may temporarily fail on
+    # /ambilight/currentconfiguration right after startup/standby.
     await coordinator.async_refresh()
-
     if not coordinator.last_update_success:
-        raise ConfigEntryNotReady("Initial Ambilight data refresh failed")
+        _LOGGER.warning(
+            "Initial Ambilight data refresh failed; continuing setup and waiting for next poll"
+        )
 
     # Store the data update coordinator for your platforms to access
     coordinator.api = api
