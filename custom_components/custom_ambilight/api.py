@@ -2,6 +2,7 @@
 
 import asyncio
 from base64 import b64decode
+from json import JSONDecodeError
 import logging
 from typing import Any
 
@@ -10,6 +11,7 @@ from cryptography.hazmat.primitives.padding import PKCS7
 import httpx
 
 from homeassistant.components.light import ATTR_BRIGHTNESS, ATTR_EFFECT, ATTR_HS_COLOR
+from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from .effects import EFFECTS
 
@@ -38,9 +40,29 @@ class MyApi:
 
     async def get_data(self) -> Any:
         """Fetch data from the API."""
-        response = await self.client.get(f"{self.url}/ambilight/currentconfiguration")
-        await asyncio.sleep(RATE_LIMIT)
-        self._data = response.json()
+        try:
+            response = await self.client.get(f"{self.url}/ambilight/currentconfiguration")
+            await asyncio.sleep(RATE_LIMIT)
+            response.raise_for_status()
+
+            if not response.content:
+                if self._data:
+                    _LOGGER.warning(
+                        "Received empty response from %s/ambilight/currentconfiguration; using previous state",
+                        self.url,
+                    )
+                    return self._data
+                raise UpdateFailed("Received empty response from Ambilight API")
+
+            self._data = response.json()
+        except (httpx.HTTPError, JSONDecodeError) as err:
+            if self._data:
+                _LOGGER.warning(
+                    "Failed to parse Ambilight response (%s); using previous state",
+                    err,
+                )
+                return self._data
+            raise UpdateFailed("Unable to fetch valid Ambilight data") from err
 
         # Check if the response matches the glitch state
         glitch_state = {
@@ -105,7 +127,11 @@ class MyApi:
             response = await self.client.get(f"{self.url}/system")
             if response.status_code == 200:
                 # Assuming the response is a JSON object
-                data = response.json()
+                try:
+                    data = response.json()
+                except JSONDecodeError as err:
+                    _LOGGER.error("Failed to parse /system response: %s", err)
+                    return False
                 # Decode the password
                 key = b64decode(
                     "ZmVay1EQVFOaZhwQ4Kv81ypLAZNczV9sG4KkseXWn1NEk6cXmPKO/MCa9sryslvLCFMnNe4Z4CPXzToowvhHvA=="
