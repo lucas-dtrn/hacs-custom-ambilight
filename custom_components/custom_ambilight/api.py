@@ -42,27 +42,57 @@ class MyApi:
         self._data = {}
         self._turn_on_in_progress = False
 
+    @staticmethod
+    def _truncate_text(value: str, max_len: int = 200) -> str:
+        """Return a single-line preview for logging."""
+        text = value.replace("\n", " ").replace("\r", " ").strip()
+        if len(text) > max_len:
+            return f"{text[:max_len]}..."
+        return text
+
+    @staticmethod
+    def _response_preview(response: httpx.Response, max_len: int = 200) -> str:
+        """Return a short response body preview for diagnostics."""
+        text = response.text if response.content else ""
+        return MyApi._truncate_text(text, max_len=max_len)
+
     async def get_data(self) -> Any:
         """Fetch data from the API."""
+        endpoint = f"{self.url}/ambilight/currentconfiguration"
         try:
-            response = await self.client.get(f"{self.url}/ambilight/currentconfiguration")
+            response = await self.client.get(endpoint)
             await asyncio.sleep(RATE_LIMIT)
             response.raise_for_status()
 
             if not response.content:
                 if self._data:
                     _LOGGER.warning(
-                        "Received empty response from %s/ambilight/currentconfiguration; using previous state",
-                        self.url,
+                        "Received empty response from %s (status=%s, content_type=%s); using previous state",
+                        endpoint,
+                        response.status_code,
+                        response.headers.get("content-type"),
                     )
                     return self._data
                 raise UpdateFailed("Received empty response from Ambilight API")
 
-            self._data = response.json()
+            try:
+                self._data = response.json()
+            except JSONDecodeError as err:
+                _LOGGER.warning(
+                    "Invalid JSON from %s (status=%s, content_type=%s, body_len=%s, body_preview=%r): %s",
+                    endpoint,
+                    response.status_code,
+                    response.headers.get("content-type"),
+                    len(response.content),
+                    self._response_preview(response),
+                    err,
+                )
+                raise
         except (httpx.HTTPError, JSONDecodeError) as err:
             if self._data:
                 _LOGGER.warning(
-                    "Failed to parse Ambilight response (%s); using previous state",
+                    "Failed to fetch Ambilight data from %s (%s); using previous state",
+                    endpoint,
                     err,
                 )
                 return self._data
@@ -133,7 +163,8 @@ class MyApi:
             return CONNECTION_INVALID_AUTH
 
         try:
-            response = await self.client.get(f"{self.url}/system")
+            system_endpoint = f"{self.url}/system"
+            response = await self.client.get(system_endpoint)
         except (httpx.ConnectError, httpx.TimeoutException) as err:
             _LOGGER.warning("Cannot connect to TV at %s: %s", self.url, err)
             return CONNECTION_CANNOT_CONNECT
@@ -142,20 +173,35 @@ class MyApi:
             return CONNECTION_CANNOT_CONNECT
 
         if response.status_code in (401, 403):
+            _LOGGER.warning(
+                "Authentication rejected by %s/system (status=%s)",
+                self.url,
+                response.status_code,
+            )
             return CONNECTION_INVALID_AUTH
 
         if response.status_code != 200:
             _LOGGER.warning(
-                "Unexpected status from %s/system: %s",
+                "Unexpected status from %s/system: %s (content_type=%s, body_len=%s, body_preview=%r)",
                 self.url,
                 response.status_code,
+                response.headers.get("content-type"),
+                len(response.content),
+                self._response_preview(response),
             )
             return CONNECTION_UNKNOWN
 
         try:
             data = response.json()
         except JSONDecodeError as err:
-            _LOGGER.warning("Failed to parse /system response from %s: %s", self.url, err)
+            _LOGGER.warning(
+                "Failed to parse /system response from %s (content_type=%s, body_len=%s, body_preview=%r): %s",
+                self.url,
+                response.headers.get("content-type"),
+                len(response.content),
+                self._response_preview(response),
+                err,
+            )
             return CONNECTION_UNKNOWN
 
         # Decode encrypted fields when available (best effort).
