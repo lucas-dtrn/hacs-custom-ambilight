@@ -67,6 +67,11 @@ class MyApi:
         text = response.text if response.content else ""
         return MyApi._truncate_text(text, max_len=max_len)
 
+    @staticmethod
+    def _is_success_status(status_code: int) -> bool:
+        """Return True when an HTTP status code indicates success."""
+        return 200 <= status_code < 300
+
     async def get_data(self) -> Any:
         """Fetch data from the API."""
         endpoint = f"{self.url}/ambilight/currentconfiguration"
@@ -192,7 +197,7 @@ class MyApi:
             response = await self.client.post(url, json=data)
         except (httpx.TimeoutException, httpx.TransportError) as err:
             _LOGGER.warning(
-                "Ambilight API write error: endpoint=%s error=%s; reconnecting and retrying once",
+                "Ambilight API write error: endpoint=%s error=%r; reconnecting and retrying once",
                 endpoint,
                 err,
             )
@@ -211,7 +216,7 @@ class MyApi:
                 response = await self.client.post(url, json=data)
             except (httpx.TimeoutException, httpx.TransportError) as retry_err:
                 _LOGGER.warning(
-                    "Ambilight API write retry failed: endpoint=%s error=%s",
+                    "Ambilight API write retry failed: endpoint=%s error=%r",
                     endpoint,
                     retry_err,
                 )
@@ -554,9 +559,9 @@ class MyApi:
                         *target_rgb
                     )
 
-                    target_step_duration = 0.2
+                    target_step_duration = 0.5
                     steps = max(1, int(transition_seconds / target_step_duration))
-                    steps = min(steps, 50)
+                    steps = min(steps, 30)
                     delay_per_step = max(0.0, (transition_seconds / steps) - RATE_LIMIT)
 
                     for step in range(1, steps + 1):
@@ -591,30 +596,44 @@ class MyApi:
                         if step_hue == 255:
                             # Normalize hue boundary to avoid wrap artifacts on some TVs.
                             step_hue = 0
-                        self._last_transition_color = (
-                            step_hue,
-                            step_saturation,
-                            step_brightness,
-                        )
-                        await self.send_data(
+                        status_code = await self.send_data(
                             "ambilight/lounge",
                             self._build_color_data(
                                 step_hue, step_saturation, step_brightness
                             ),
+                        )
+                        if not self._is_success_status(status_code):
+                            _LOGGER.warning(
+                                "Stopping transition after failed lounge write (status=%s, step=%s/%s)",
+                                status_code,
+                                step,
+                                steps,
+                            )
+                            return
+                        self._last_transition_color = (
+                            step_hue,
+                            step_saturation,
+                            step_brightness,
                         )
                         if delay_per_step > 0 and step < steps:
                             await asyncio.sleep(delay_per_step)
                 else:
                     target_hue = int((hue / 360) * 255)
                     target_saturation = int((saturation / 100) * 255)
+                    status_code = await self.send_data(
+                        "ambilight/lounge",
+                        self._build_color_data(target_hue, target_saturation, brightness),
+                    )
+                    if not self._is_success_status(status_code):
+                        _LOGGER.warning(
+                            "Failed lounge write without transition (status=%s); keeping previous color state",
+                            status_code,
+                        )
+                        return
                     self._last_transition_color = (
                         target_hue,
                         target_saturation,
                         brightness,
-                    )
-                    await self.send_data(
-                        "ambilight/lounge",
-                        self._build_color_data(target_hue, target_saturation, brightness),
                     )
                 
                 # Save the current color and brightness for later use (e.g., when switching to effect mode)
