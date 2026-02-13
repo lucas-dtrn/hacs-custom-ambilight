@@ -72,9 +72,18 @@ class MyApi:
         self._last_successful_lounge_payload = None
         self._lounge_failure_count = 0
         self._lounge_cooldown_until = 0.0
+        try:
+            parsed_interval_ms = int(lounge_min_interval_ms)
+        except (TypeError, ValueError):
+            _LOGGER.warning(
+                "Invalid lounge_min_interval_ms value %r; falling back to default %sms",
+                lounge_min_interval_ms,
+                DEFAULT_LOUNGE_MIN_INTERVAL_MS,
+            )
+            parsed_interval_ms = DEFAULT_LOUNGE_MIN_INTERVAL_MS
         interval_ms = max(
             MIN_LOUNGE_MIN_INTERVAL_MS,
-            min(MAX_LOUNGE_MIN_INTERVAL_MS, int(lounge_min_interval_ms)),
+            min(MAX_LOUNGE_MIN_INTERVAL_MS, parsed_interval_ms),
         )
         self._lounge_min_interval_seconds = interval_ms / 1000.0
         self._lounge_last_sent_at = 0.0

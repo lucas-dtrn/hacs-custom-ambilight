@@ -66,7 +66,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Store the data update coordinator for your platforms to access
     coordinator.api = api
-    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
+    update_listener = entry.add_update_listener(_async_update_listener)
+    if hasattr(entry, "async_on_unload"):
+        entry.async_on_unload(update_listener)
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
     # Forward the entry setup to the platforms
