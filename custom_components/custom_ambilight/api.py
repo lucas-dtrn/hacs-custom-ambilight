@@ -60,6 +60,8 @@ class MyApi:
         self._last_successful_lounge_payload = None
         self._lounge_failure_count = 0
         self._lounge_cooldown_until = 0.0
+        self._lounge_min_interval_seconds = 0.7
+        self._lounge_last_sent_at = 0.0
 
     @staticmethod
     def _truncate_text(value: str, max_len: int = 200) -> str:
@@ -312,7 +314,15 @@ class MyApi:
                 break
 
             payload, waiter = pending
+            now = asyncio.get_running_loop().time()
+            earliest_next = (
+                self._lounge_last_sent_at + self._lounge_min_interval_seconds
+            )
+            if now < earliest_next:
+                await asyncio.sleep(earliest_next - now)
             status = await self._post_data("ambilight/lounge", payload)
+            if self._is_success_status(status):
+                self._lounge_last_sent_at = asyncio.get_running_loop().time()
             if not waiter.done():
                 waiter.set_result(status)
 
