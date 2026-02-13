@@ -42,7 +42,9 @@ class MyApi:
         self.password = password
         self.url = f"{connection_type}://{host}:1926/6" if connection_type == "https" else f"http://{host}:1925/6"
         self.client = httpx.AsyncClient(
-            auth=httpx.DigestAuth(username, password) if connection_type == "https" else None, verify=False
+            auth=httpx.DigestAuth(username, password) if connection_type == "https" else None,
+            verify=False,
+            timeout=httpx.Timeout(5.0, connect=2.0),
         )
         self.EFFECTS = EFFECTS
         self.previous_state = None
@@ -182,7 +184,35 @@ class MyApi:
             endpoint,
             self._truncate_text(repr(data), max_len=240),
         )
-        response = await self.client.post(url, json=data)
+        try:
+            response = await self.client.post(url, json=data)
+        except (httpx.TimeoutException, httpx.TransportError) as err:
+            _LOGGER.warning(
+                "Ambilight API write error: endpoint=%s error=%s; reconnecting and retrying once",
+                endpoint,
+                err,
+            )
+            try:
+                await self.client.aclose()
+            except Exception:  # pylint: disable=broad-except
+                pass
+            self.client = httpx.AsyncClient(
+                auth=httpx.DigestAuth(self.username, self.password)
+                if self.connection_type == "https"
+                else None,
+                verify=False,
+                timeout=httpx.Timeout(5.0, connect=2.0),
+            )
+            try:
+                response = await self.client.post(url, json=data)
+            except (httpx.TimeoutException, httpx.TransportError) as retry_err:
+                _LOGGER.warning(
+                    "Ambilight API write retry failed: endpoint=%s error=%s",
+                    endpoint,
+                    retry_err,
+                )
+                await asyncio.sleep(RATE_LIMIT)
+                return 0
         if response.status_code >= 400:
             _LOGGER.warning(
                 "Ambilight API write failed: endpoint=%s status=%s body_preview=%r",
