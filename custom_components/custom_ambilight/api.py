@@ -162,6 +162,16 @@ class MyApi:
             "algorithm": "MANUAL_HUE",
         }
 
+    @staticmethod
+    def _interpolate_hue_shortest_path(
+        start_hue: float, end_hue: float, progress: float
+    ) -> float:
+        """Interpolate hue on the shortest path on the hue circle."""
+        start = start_hue % 360.0
+        end = end_hue % 360.0
+        delta = ((end - start + 180.0) % 360.0) - 180.0
+        return (start + delta * progress) % 360.0
+
     def cbc_decode(self, key: bytes, data: str):
         """Decode encrypted fields based on shared key."""
         if data == "":
@@ -370,10 +380,6 @@ class MyApi:
                     # This happens when brightness is changed while an effect is active and no previous color is known
                     hue, saturation = 0, 0
 
-                # Convert hue and saturation to the range 0-255
-                target_hue = int((hue / 360) * 255)
-                target_saturation = int((saturation / 100) * 255)
-
                 if transition_seconds > 0:
                     if current_hs_color:
                         start_hs_hue, start_hs_saturation = current_hs_color
@@ -393,8 +399,12 @@ class MyApi:
                     else:
                         start_brightness = 0
 
-                    start_hue = int((start_hs_hue / 360) * 255)
-                    start_saturation = int((start_hs_saturation / 100) * 255)
+                    start_hue_hsl = float(start_hs_hue)
+                    start_saturation_hsl = float(start_hs_saturation)
+                    start_lightness_hsl = float((start_brightness / 255) * 100)
+                    target_hue_hsl = float(hue)
+                    target_saturation_hsl = float(saturation)
+                    target_lightness_hsl = float((brightness / 255) * 100)
 
                     target_step_duration = 0.2
                     steps = max(1, int(transition_seconds / target_step_duration))
@@ -403,20 +413,26 @@ class MyApi:
 
                     for step in range(1, steps + 1):
                         progress = step / steps
-                        step_hue = int(
-                            round(start_hue + (target_hue - start_hue) * progress)
+                        step_hue_hsl = self._interpolate_hue_shortest_path(
+                            start_hue_hsl, target_hue_hsl, progress
                         )
+                        step_saturation_hsl = (
+                            start_saturation_hsl
+                            + (target_saturation_hsl - start_saturation_hsl) * progress
+                        )
+                        step_lightness_hsl = (
+                            start_lightness_hsl
+                            + (target_lightness_hsl - start_lightness_hsl) * progress
+                        )
+
+                        step_hue = int(round((step_hue_hsl / 360) * 255)) % 256
                         step_saturation = int(
                             round(
-                                start_saturation
-                                + (target_saturation - start_saturation) * progress
+                                max(0.0, min(100.0, step_saturation_hsl)) / 100 * 255
                             )
                         )
                         step_brightness = int(
-                            round(
-                                start_brightness
-                                + (brightness - start_brightness) * progress
-                            )
+                            round(max(0.0, min(100.0, step_lightness_hsl)) / 100 * 255)
                         )
                         await self.send_data(
                             "ambilight/lounge",
@@ -427,6 +443,8 @@ class MyApi:
                         if delay_per_step > 0 and step < steps:
                             await asyncio.sleep(delay_per_step)
                 else:
+                    target_hue = int((hue / 360) * 255)
+                    target_saturation = int((saturation / 100) * 255)
                     await self.send_data(
                         "ambilight/lounge",
                         self._build_color_data(target_hue, target_saturation, brightness),
@@ -434,8 +452,8 @@ class MyApi:
                 
                 # Save the current color and brightness for later use (e.g., when switching to effect mode)
                 # Convert back from 0-255 range to 0-360/0-100 range for storage
-                stored_hue = round((target_hue / 255) * 360)
-                stored_saturation = round((target_saturation / 255) * 100)
+                stored_hue = round(hue)
+                stored_saturation = round(saturation)
                 self.previous_state = {
                     "brightness": brightness,
                     "hs_color": (stored_hue, stored_saturation),
