@@ -435,12 +435,17 @@ class MyApi:
                         step_hls_s = (
                             start_hls_s + (target_hls_s - start_hls_s) * progress
                         )
+                        step_hue_norm = (step_hls_h % 360.0) / 360.0
                         step_rgb = colorsys.hls_to_rgb(
-                            (step_hls_h % 360.0) / 360.0,
+                            step_hue_norm,
                             max(0.0, min(1.0, step_hls_l)),
                             max(0.0, min(1.0, step_hls_s)),
                         )
                         step_hsv_h, step_hsv_s, step_hsv_v = colorsys.rgb_to_hsv(*step_rgb)
+                        if step_hsv_s < 0.01:
+                            # Hue is undefined near grayscale; keep the interpolated hue
+                            # instead of falling back to colorsys default (0/red).
+                            step_hsv_h = step_hue_norm
 
                         step_hue = int(round(step_hsv_h * 255)) % 256
                         step_saturation = int(round(step_hsv_s * 255))
