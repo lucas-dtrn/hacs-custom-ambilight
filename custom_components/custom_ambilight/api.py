@@ -343,15 +343,13 @@ class MyApi:
                 transition_seconds = float(transition) if transition is not None else 0.0
                 transition_seconds = max(0.0, transition_seconds)
 
-                # If the light is off, activate the Natural effect first
+                # If the light is off, power it on directly.
+                # Avoid switching through FOLLOW_VIDEO/NATURAL, as that can
+                # temporarily force the TV default orange color.
                 if not self.get_is_on():
                     await self.send_data(
-                        "ambilight/currentconfiguration",
-                        {
-                            "styleName": "FOLLOW_VIDEO",
-                            "isExpert": False,
-                            "menuSetting": "NATURAL",
-                        },
+                        "ambilight/power",
+                        {"power": "on"},
                     )
                 # Determine the brightness value
                 # If brightness is explicitly provided, use it
@@ -559,15 +557,5 @@ class MyApi:
             "hs_color": current_hs_color,
             "effect": self.get_effect(),
         }
-        # If the current effect is None, switch to the Natural effect
-        if self.get_effect() is None:
-            await self.send_data(
-                "ambilight/currentconfiguration",
-                {
-                    "styleName": "FOLLOW_VIDEO",
-                    "isExpert": False,
-                    "menuSetting": "NATURAL",
-                },
-            )
         # Turn off the light
         await self.send_data("ambilight/power", {"power": "off"})
