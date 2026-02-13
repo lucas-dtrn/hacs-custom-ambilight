@@ -1,5 +1,7 @@
 """Light module for Custom Ambilight integration."""
 
+import logging
+
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ATTR_EFFECT,
@@ -16,6 +18,8 @@ from homeassistant.helpers.translation import async_get_translations
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class CustomAmbilightLight(CoordinatorEntity, LightEntity):
@@ -141,13 +145,19 @@ class CustomAmbilightLight(CoordinatorEntity, LightEntity):
             )
             kwargs[ATTR_EFFECT] = normalized_effect
         # Don't refresh before turn_on to avoid recursion if get_data calls turn_on
-        await self.api.turn_on(**kwargs)
+        try:
+            await self.api.turn_on(**kwargs)
+        except Exception as err:  # pylint: disable=broad-except
+            _LOGGER.warning("Failed to turn on Ambilight light: %s", err)
         # Refresh after to update the state
         await self.coordinator.async_refresh()
 
     async def async_turn_off(self):
         """Turn the light off."""
-        await self.api.turn_off()
+        try:
+            await self.api.turn_off()
+        except Exception as err:  # pylint: disable=broad-except
+            _LOGGER.warning("Failed to turn off Ambilight light: %s", err)
         # Refresh after to update the state
         await self.coordinator.async_refresh()
 

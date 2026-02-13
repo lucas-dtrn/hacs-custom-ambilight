@@ -171,7 +171,11 @@ class MyApi:
             # Reset the connection (read-recovery only).
             await self.client.aclose()
             self.client = httpx.AsyncClient(
-                auth=httpx.DigestAuth(self.username, self.password), verify=False
+                auth=httpx.DigestAuth(self.username, self.password)
+                if self.connection_type == "https"
+                else None,
+                verify=False,
+                timeout=httpx.Timeout(5.0, connect=2.0),
             )
 
         return self._data
