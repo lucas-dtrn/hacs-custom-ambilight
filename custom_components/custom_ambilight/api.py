@@ -1,6 +1,7 @@
 """API module for Custom Ambilight integration."""
 
 import asyncio
+import colorsys
 from base64 import b64decode
 from json import JSONDecodeError
 import logging
@@ -399,12 +400,24 @@ class MyApi:
                     else:
                         start_brightness = 0
 
-                    start_hue_hsl = float(start_hs_hue)
-                    start_saturation_hsl = float(start_hs_saturation)
-                    start_lightness_hsl = float((start_brightness / 255) * 100)
-                    target_hue_hsl = float(hue)
-                    target_saturation_hsl = float(saturation)
-                    target_lightness_hsl = float((brightness / 255) * 100)
+                    # Home Assistant provides HS + brightness in HSV semantics.
+                    # Convert both endpoints to HLS, interpolate there, then convert
+                    # each step back to HSV for the Ambilight API payload.
+                    start_hsv_h = (float(start_hs_hue) % 360.0) / 360.0
+                    start_hsv_s = max(0.0, min(100.0, float(start_hs_saturation))) / 100.0
+                    start_hsv_v = max(0.0, min(255.0, float(start_brightness))) / 255.0
+                    start_rgb = colorsys.hsv_to_rgb(start_hsv_h, start_hsv_s, start_hsv_v)
+                    start_hls_h, start_hls_l, start_hls_s = colorsys.rgb_to_hls(*start_rgb)
+
+                    target_hsv_h = (float(hue) % 360.0) / 360.0
+                    target_hsv_s = max(0.0, min(100.0, float(saturation))) / 100.0
+                    target_hsv_v = max(0.0, min(255.0, float(brightness))) / 255.0
+                    target_rgb = colorsys.hsv_to_rgb(
+                        target_hsv_h, target_hsv_s, target_hsv_v
+                    )
+                    target_hls_h, target_hls_l, target_hls_s = colorsys.rgb_to_hls(
+                        *target_rgb
+                    )
 
                     target_step_duration = 0.2
                     steps = max(1, int(transition_seconds / target_step_duration))
@@ -413,27 +426,31 @@ class MyApi:
 
                     for step in range(1, steps + 1):
                         progress = step / steps
-                        step_hue_hsl = self._interpolate_hue_shortest_path(
-                            start_hue_hsl, target_hue_hsl, progress
+                        step_hls_h = self._interpolate_hue_shortest_path(
+                            start_hls_h * 360.0, target_hls_h * 360.0, progress
                         )
-                        step_saturation_hsl = (
-                            start_saturation_hsl
-                            + (target_saturation_hsl - start_saturation_hsl) * progress
+                        step_hls_l = (
+                            start_hls_l + (target_hls_l - start_hls_l) * progress
                         )
-                        step_lightness_hsl = (
-                            start_lightness_hsl
-                            + (target_lightness_hsl - start_lightness_hsl) * progress
+                        step_hls_s = (
+                            start_hls_s + (target_hls_s - start_hls_s) * progress
                         )
+                        step_rgb = colorsys.hls_to_rgb(
+                            (step_hls_h % 360.0) / 360.0,
+                            max(0.0, min(1.0, step_hls_l)),
+                            max(0.0, min(1.0, step_hls_s)),
+                        )
+                        step_hsv_h, step_hsv_s, step_hsv_v = colorsys.rgb_to_hsv(*step_rgb)
 
-                        step_hue = int(round((step_hue_hsl / 360) * 255)) % 256
-                        step_saturation = int(
-                            round(
-                                max(0.0, min(100.0, step_saturation_hsl)) / 100 * 255
-                            )
-                        )
-                        step_brightness = int(
-                            round(max(0.0, min(100.0, step_lightness_hsl)) / 100 * 255)
-                        )
+                        step_hue = int(round(step_hsv_h * 255)) % 256
+                        step_saturation = int(round(step_hsv_s * 255))
+                        step_brightness = int(round(step_hsv_v * 255))
+
+                        step_saturation = max(0, min(255, step_saturation))
+                        step_brightness = max(0, min(255, step_brightness))
+                        if step_hue == 255:
+                            # Normalize hue boundary to avoid wrap artifacts on some TVs.
+                            step_hue = 0
                         await self.send_data(
                             "ambilight/lounge",
                             self._build_color_data(
