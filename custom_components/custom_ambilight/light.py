@@ -4,6 +4,7 @@ from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
     ATTR_EFFECT,
     ATTR_HS_COLOR,
+    ATTR_TRANSITION,
     ColorMode,
     LightEntity,
     LightEntityFeature,
@@ -27,7 +28,9 @@ class CustomAmbilightLight(CoordinatorEntity, LightEntity):
         """Initialize the Custom Ambilight light."""
         super().__init__(coordinator)
         self.api = coordinator.api
-        self._attr_supported_features = LightEntityFeature.EFFECT
+        self._attr_supported_features = (
+            LightEntityFeature.EFFECT | LightEntityFeature.TRANSITION
+        )
         self._attr_supported_color_modes = {ColorMode.HS}
         self._attr_color_mode = ColorMode.HS
         self._attr_unique_id = entry_id  # Use the config entry ID as the unique ID
@@ -128,6 +131,8 @@ class CustomAmbilightLight(CoordinatorEntity, LightEntity):
 
     async def async_turn_on(self, **kwargs):
         """Turn the light on."""
+        if kwargs.get(ATTR_TRANSITION) is not None:
+            kwargs[ATTR_TRANSITION] = float(kwargs[ATTR_TRANSITION])
         if kwargs.get(ATTR_EFFECT):
             await self._async_refresh_effect_translations()
             effect_value = kwargs.get(ATTR_EFFECT)

@@ -10,7 +10,12 @@ from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 from cryptography.hazmat.primitives.padding import PKCS7
 import httpx
 
-from homeassistant.components.light import ATTR_BRIGHTNESS, ATTR_EFFECT, ATTR_HS_COLOR
+from homeassistant.components.light import (
+    ATTR_BRIGHTNESS,
+    ATTR_EFFECT,
+    ATTR_HS_COLOR,
+    ATTR_TRANSITION,
+)
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from .effects import EFFECTS
@@ -142,6 +147,20 @@ class MyApi:
         # Sleep for the rate limit duration
         await asyncio.sleep(RATE_LIMIT)
         return response.status_code
+
+    @staticmethod
+    def _build_color_data(hue: int, saturation: int, brightness: int) -> dict[str, Any]:
+        """Build payload for manual lounge color mode."""
+        return {
+            "color": {
+                "hue": hue,
+                "saturation": saturation,
+                "brightness": brightness,
+            },
+            "colorDelta": {"hue": 0, "saturation": 0, "brightness": 0},
+            "speed": 255,
+            "algorithm": "MANUAL_HUE",
+        }
 
     def cbc_decode(self, key: bytes, data: str):
         """Decode encrypted fields based on shared key."""
@@ -309,6 +328,10 @@ class MyApi:
 
             # Check if brightness or color is in kwargs
             if kwargs.get(ATTR_BRIGHTNESS) is not None or kwargs.get(ATTR_HS_COLOR) is not None:
+                transition = kwargs.get(ATTR_TRANSITION)
+                transition_seconds = float(transition) if transition is not None else 0.0
+                transition_seconds = max(0.0, transition_seconds)
+
                 # If the light is off, activate the Natural effect first
                 if not self.get_is_on():
                     await self.send_data(
@@ -348,26 +371,71 @@ class MyApi:
                     hue, saturation = 0, 0
 
                 # Convert hue and saturation to the range 0-255
-                hue = int((hue / 360) * 255)
-                saturation = int((saturation / 100) * 255)
+                target_hue = int((hue / 360) * 255)
+                target_saturation = int((saturation / 100) * 255)
 
-                # Send the color data to the API
-                color_data = {
-                    "color": {
-                        "hue": hue,
-                        "saturation": saturation,
-                        "brightness": brightness,
-                    },
-                    "colorDelta": {"hue": 0, "saturation": 0, "brightness": 0},
-                    "speed": 255,
-                    "algorithm": "MANUAL_HUE",
-                }
-                await self.send_data("ambilight/lounge", color_data)
+                if transition_seconds > 0:
+                    if current_hs_color:
+                        start_hs_hue, start_hs_saturation = current_hs_color
+                    elif self.previous_state and self.previous_state.get("hs_color"):
+                        start_hs_hue, start_hs_saturation = self.previous_state.get(
+                            "hs_color"
+                        )
+                    else:
+                        start_hs_hue, start_hs_saturation = hue, saturation
+
+                    if current_brightness is not None:
+                        start_brightness = current_brightness
+                    elif self.previous_state and self.previous_state.get("brightness") is not None:
+                        start_brightness = self.previous_state.get("brightness")
+                    elif self.get_is_on():
+                        start_brightness = brightness
+                    else:
+                        start_brightness = 0
+
+                    start_hue = int((start_hs_hue / 360) * 255)
+                    start_saturation = int((start_hs_saturation / 100) * 255)
+
+                    target_step_duration = 0.2
+                    steps = max(1, int(transition_seconds / target_step_duration))
+                    steps = min(steps, 50)
+                    delay_per_step = max(0.0, (transition_seconds / steps) - RATE_LIMIT)
+
+                    for step in range(1, steps + 1):
+                        progress = step / steps
+                        step_hue = int(
+                            round(start_hue + (target_hue - start_hue) * progress)
+                        )
+                        step_saturation = int(
+                            round(
+                                start_saturation
+                                + (target_saturation - start_saturation) * progress
+                            )
+                        )
+                        step_brightness = int(
+                            round(
+                                start_brightness
+                                + (brightness - start_brightness) * progress
+                            )
+                        )
+                        await self.send_data(
+                            "ambilight/lounge",
+                            self._build_color_data(
+                                step_hue, step_saturation, step_brightness
+                            ),
+                        )
+                        if delay_per_step > 0 and step < steps:
+                            await asyncio.sleep(delay_per_step)
+                else:
+                    await self.send_data(
+                        "ambilight/lounge",
+                        self._build_color_data(target_hue, target_saturation, brightness),
+                    )
                 
                 # Save the current color and brightness for later use (e.g., when switching to effect mode)
                 # Convert back from 0-255 range to 0-360/0-100 range for storage
-                stored_hue = round((hue / 255) * 360)
-                stored_saturation = round((saturation / 255) * 100)
+                stored_hue = round((target_hue / 255) * 360)
+                stored_saturation = round((target_saturation / 255) * 100)
                 self.previous_state = {
                     "brightness": brightness,
                     "hs_color": (stored_hue, stored_saturation),
