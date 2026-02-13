@@ -52,6 +52,8 @@ class MyApi:
         self._turn_on_in_progress = False
         self._transition_task = None
         self._last_transition_color = None
+        self._write_lock = asyncio.Lock()
+        self._write_backoff_until = 0.0
 
     @staticmethod
     def _truncate_text(value: str, max_len: int = 200) -> str:
@@ -188,56 +190,76 @@ class MyApi:
     async def send_data(self, endpoint: str, data: Any) -> int:
         """Send data to the API."""
         url = f"{self.url}/{endpoint}"
-        _LOGGER.debug(
-            "Ambilight API write request: endpoint=%s payload=%s",
-            endpoint,
-            self._truncate_text(repr(data), max_len=240),
-        )
-        try:
-            response = await self.client.post(url, json=data)
-        except (httpx.TimeoutException, httpx.TransportError) as err:
-            _LOGGER.warning(
-                "Ambilight API write error: endpoint=%s error=%r; reconnecting and retrying once",
+        async with self._write_lock:
+            now = asyncio.get_running_loop().time()
+            if now < self._write_backoff_until:
+                wait_seconds = self._write_backoff_until - now
+                _LOGGER.debug(
+                    "Ambilight API write backoff active: endpoint=%s wait=%.2fs",
+                    endpoint,
+                    wait_seconds,
+                )
+                await asyncio.sleep(wait_seconds)
+
+            _LOGGER.debug(
+                "Ambilight API write request: endpoint=%s payload=%s",
                 endpoint,
-                err,
-            )
-            try:
-                await self.client.aclose()
-            except Exception:  # pylint: disable=broad-except
-                pass
-            self.client = httpx.AsyncClient(
-                auth=httpx.DigestAuth(self.username, self.password)
-                if self.connection_type == "https"
-                else None,
-                verify=False,
-                timeout=httpx.Timeout(5.0, connect=2.0),
+                self._truncate_text(repr(data), max_len=240),
             )
             try:
                 response = await self.client.post(url, json=data)
-            except (httpx.TimeoutException, httpx.TransportError) as retry_err:
+            except (httpx.TimeoutException, httpx.TransportError) as err:
                 _LOGGER.warning(
-                    "Ambilight API write retry failed: endpoint=%s error=%r",
+                    "Ambilight API write error: endpoint=%s error=%r; reconnecting and retrying once",
                     endpoint,
-                    retry_err,
+                    err,
                 )
-                await asyncio.sleep(RATE_LIMIT)
-                return 0
-        if response.status_code >= 400:
-            _LOGGER.warning(
-                "Ambilight API write failed: endpoint=%s status=%s body_preview=%r",
-                endpoint,
-                response.status_code,
-                self._response_preview(response),
-            )
-        else:
-            _LOGGER.debug(
-                "Ambilight API write response: endpoint=%s status=%s",
-                endpoint,
-                response.status_code,
-            )
-        # Sleep for the rate limit duration
-        await asyncio.sleep(RATE_LIMIT)
-        return response.status_code
+                try:
+                    await self.client.aclose()
+                except Exception:  # pylint: disable=broad-except
+                    pass
+                self.client = httpx.AsyncClient(
+                    auth=httpx.DigestAuth(self.username, self.password)
+                    if self.connection_type == "https"
+                    else None,
+                    verify=False,
+                    timeout=httpx.Timeout(5.0, connect=2.0),
+                )
+                try:
+                    response = await self.client.post(url, json=data)
+                except (httpx.TimeoutException, httpx.TransportError) as retry_err:
+                    _LOGGER.warning(
+                        "Ambilight API write retry failed: endpoint=%s error=%r",
+                        endpoint,
+                        retry_err,
+                    )
+                    self._write_backoff_until = (
+                        asyncio.get_running_loop().time() + 1.0
+                    )
+                    await asyncio.sleep(RATE_LIMIT)
+                    return 0
+
+            if response.status_code >= 400:
+                _LOGGER.warning(
+                    "Ambilight API write failed: endpoint=%s status=%s body_preview=%r",
+                    endpoint,
+                    response.status_code,
+                    self._response_preview(response),
+                )
+                if response.status_code >= 500:
+                    self._write_backoff_until = (
+                        asyncio.get_running_loop().time() + 0.5
+                    )
+            else:
+                _LOGGER.debug(
+                    "Ambilight API write response: endpoint=%s status=%s",
+                    endpoint,
+                    response.status_code,
+                )
+
+            # Sleep for the rate limit duration
+            await asyncio.sleep(RATE_LIMIT)
+            return response.status_code
 
     async def _cancel_active_transition(self) -> None:
         """Cancel an active transition so a newer request can take over."""
