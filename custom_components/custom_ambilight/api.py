@@ -57,6 +57,9 @@ class MyApi:
         self._lounge_queue_lock = asyncio.Lock()
         self._lounge_pending_write = None
         self._lounge_worker_task = None
+        self._last_successful_lounge_payload = None
+        self._lounge_failure_count = 0
+        self._lounge_cooldown_until = 0.0
 
     @staticmethod
     def _truncate_text(value: str, max_len: int = 200) -> str:
@@ -236,6 +239,17 @@ class MyApi:
                         endpoint,
                         retry_err,
                     )
+                    if endpoint == "ambilight/lounge":
+                        self._lounge_failure_count += 1
+                        cooldown = min(5.0, 0.5 * (2 ** (self._lounge_failure_count - 1)))
+                        self._lounge_cooldown_until = (
+                            asyncio.get_running_loop().time() + cooldown
+                        )
+                        _LOGGER.warning(
+                            "Lounge write cooldown enabled: failures=%s cooldown=%.2fs",
+                            self._lounge_failure_count,
+                            cooldown,
+                        )
                     self._write_backoff_until = (
                         asyncio.get_running_loop().time() + 1.0
                     )
@@ -253,12 +267,28 @@ class MyApi:
                     self._write_backoff_until = (
                         asyncio.get_running_loop().time() + 0.5
                     )
+                if endpoint == "ambilight/lounge":
+                    self._lounge_failure_count += 1
+                    if response.status_code >= 500:
+                        cooldown = min(5.0, 0.5 * (2 ** (self._lounge_failure_count - 1)))
+                        self._lounge_cooldown_until = (
+                            asyncio.get_running_loop().time() + cooldown
+                        )
+                        _LOGGER.warning(
+                            "Lounge write cooldown enabled: failures=%s cooldown=%.2fs",
+                            self._lounge_failure_count,
+                            cooldown,
+                        )
             else:
                 _LOGGER.debug(
                     "Ambilight API write response: endpoint=%s status=%s",
                     endpoint,
                     response.status_code,
                 )
+                if endpoint == "ambilight/lounge":
+                    self._lounge_failure_count = 0
+                    self._lounge_cooldown_until = 0.0
+                    self._last_successful_lounge_payload = data
 
             # Sleep for the rate limit duration
             await asyncio.sleep(RATE_LIMIT)
@@ -288,6 +318,18 @@ class MyApi:
 
     async def _send_lounge_coalesced(self, data: Any) -> int:
         """Queue lounge writes and keep only latest pending write."""
+        now = asyncio.get_running_loop().time()
+        if now < self._lounge_cooldown_until:
+            _LOGGER.debug(
+                "Skipping lounge write due to cooldown: remaining=%.2fs",
+                self._lounge_cooldown_until - now,
+            )
+            return 0
+
+        if self._last_successful_lounge_payload == data:
+            _LOGGER.debug("Skipping lounge write: payload unchanged from last success")
+            return 204
+
         loop = asyncio.get_running_loop()
         waiter = loop.create_future()
         async with self._lounge_queue_lock:
@@ -631,6 +673,7 @@ class MyApi:
                     steps = max(1, int(transition_seconds / target_step_duration))
                     steps = min(steps, 30)
                     delay_per_step = max(0.0, (transition_seconds / steps) - RATE_LIMIT)
+                    last_step_payload = None
 
                     for step in range(1, steps + 1):
                         progress = step / steps
@@ -664,11 +707,15 @@ class MyApi:
                         if step_hue == 255:
                             # Normalize hue boundary to avoid wrap artifacts on some TVs.
                             step_hue = 0
+                        step_payload = self._build_color_data(
+                            step_hue, step_saturation, step_brightness
+                        )
+                        if step_payload == last_step_payload:
+                            continue
+                        last_step_payload = step_payload
                         status_code = await self.send_data(
                             "ambilight/lounge",
-                            self._build_color_data(
-                                step_hue, step_saturation, step_brightness
-                            ),
+                            step_payload,
                         )
                         if not self._is_success_status(status_code):
                             _LOGGER.warning(
