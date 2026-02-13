@@ -120,71 +120,82 @@ class MyApi:
             },
         }
         if self._data == glitch_state:
-            # Don't restore state if turn_on is already in progress to avoid recursion
-            if self._turn_on_in_progress:
-                return self._data
-            # Recover the state from the data before the glitch response.
-            recovered_brightness = None
-            recovered_hs_color = None
-            recovered_effect = None
+            _LOGGER.warning(
+                "Detected Ambilight glitch state from %s; keeping previous cached state and reconnecting client",
+                endpoint,
+            )
+            # Keep coordinator data read-only: never issue write calls from polling.
+            if previous_data:
+                self._data = previous_data
+
+            # Keep previous_state in sync with last known valid values for turn_on fallbacks.
             if previous_data:
                 if (
                     previous_data.get("styleName") == "Lounge light"
                     and previous_data.get("isExpert") == True
                 ):
                     previous_color = previous_data.get("colorSettings", {}).get("color", {})
-                    recovered_brightness = previous_color.get("brightness")
                     previous_hue = previous_color.get("hue")
                     previous_saturation = previous_color.get("saturation")
                     if previous_hue is not None and previous_saturation is not None:
-                        recovered_hs_color = (
-                            round((previous_hue / 255) * 360),
-                            round((previous_saturation / 255) * 100),
-                        )
+                        self.previous_state = {
+                            "brightness": previous_color.get("brightness"),
+                            "hs_color": (
+                                round((previous_hue / 255) * 360),
+                                round((previous_saturation / 255) * 100),
+                            ),
+                            "effect": None,
+                        }
                 elif previous_data.get("styleName") != "OFF":
                     previous_menu_setting = previous_data.get("menuSetting")
                     if previous_menu_setting is not None:
-                        recovered_effect = self.EFFECTS.get(
-                            previous_menu_setting,
-                            {"friendly_name": previous_menu_setting},
-                        )["friendly_name"]
+                        self.previous_state = {
+                            "brightness": (
+                                self.previous_state.get("brightness")
+                                if self.previous_state
+                                else None
+                            ),
+                            "hs_color": (
+                                self.previous_state.get("hs_color")
+                                if self.previous_state
+                                else None
+                            ),
+                            "effect": self.EFFECTS.get(
+                                previous_menu_setting,
+                                {"friendly_name": previous_menu_setting},
+                            )["friendly_name"],
+                        }
 
-            # Keep any older cached values as fallback when a field is still unknown.
-            old_previous_state = self.previous_state or {}
-            self.previous_state = {
-                "brightness": (
-                    recovered_brightness
-                    if recovered_brightness is not None
-                    else old_previous_state.get("brightness")
-                ),
-                "hs_color": (
-                    recovered_hs_color
-                    if recovered_hs_color is not None
-                    else old_previous_state.get("hs_color")
-                ),
-                "effect": (
-                    recovered_effect
-                    if recovered_effect is not None
-                    else old_previous_state.get("effect")
-                ),
-            }
-            # Reset the connection
+            # Reset the connection (read-recovery only).
             await self.client.aclose()
             self.client = httpx.AsyncClient(
                 auth=httpx.DigestAuth(self.username, self.password), verify=False
             )
-            # Restore the previous state
-            if any(value is not None for value in self.previous_state.values()):
-                await self.turn_on(**self.previous_state)
-            else:
-                await self.turn_off()
 
         return self._data
 
     async def send_data(self, endpoint: str, data: Any) -> int:
         """Send data to the API."""
         url = f"{self.url}/{endpoint}"
+        _LOGGER.debug(
+            "Ambilight API write request: endpoint=%s payload=%s",
+            endpoint,
+            self._truncate_text(repr(data), max_len=240),
+        )
         response = await self.client.post(url, json=data)
+        if response.status_code >= 400:
+            _LOGGER.warning(
+                "Ambilight API write failed: endpoint=%s status=%s body_preview=%r",
+                endpoint,
+                response.status_code,
+                self._response_preview(response),
+            )
+        else:
+            _LOGGER.debug(
+                "Ambilight API write response: endpoint=%s status=%s",
+                endpoint,
+                response.status_code,
+            )
         # Sleep for the rate limit duration
         await asyncio.sleep(RATE_LIMIT)
         return response.status_code
