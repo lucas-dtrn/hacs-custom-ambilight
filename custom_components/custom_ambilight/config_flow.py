@@ -85,7 +85,15 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
         """Get the options flow for this handler."""
-        return OptionsFlowHandler(config_entry)
+        try:
+            # Legacy style: constructor receives config_entry.
+            return OptionsFlowHandler(config_entry)
+        except TypeError:
+            # Newer HA variants may initialize options flow without constructor args.
+            flow = OptionsFlowHandler()
+            if not hasattr(flow, "config_entry"):
+                flow.config_entry = config_entry
+            return flow
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -166,9 +174,10 @@ class UnknownConnectionError(HomeAssistantError):
 class OptionsFlowHandler(config_entries.OptionsFlow):
     """Handle options flow for Custom Ambilight."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+    def __init__(self, config_entry: config_entries.ConfigEntry | None = None) -> None:
         """Initialize options flow."""
-        self.config_entry = config_entry
+        if config_entry is not None:
+            self.config_entry = config_entry
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
