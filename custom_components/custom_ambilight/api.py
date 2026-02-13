@@ -54,6 +54,9 @@ class MyApi:
         self._last_transition_color = None
         self._write_lock = asyncio.Lock()
         self._write_backoff_until = 0.0
+        self._lounge_queue_lock = asyncio.Lock()
+        self._lounge_pending_write = None
+        self._lounge_worker_task = None
 
     @staticmethod
     def _truncate_text(value: str, max_len: int = 200) -> str:
@@ -187,8 +190,8 @@ class MyApi:
 
         return self._data
 
-    async def send_data(self, endpoint: str, data: Any) -> int:
-        """Send data to the API."""
+    async def _post_data(self, endpoint: str, data: Any) -> int:
+        """Post data with retries and global write serialization."""
         url = f"{self.url}/{endpoint}"
         async with self._write_lock:
             now = asyncio.get_running_loop().time()
@@ -260,6 +263,49 @@ class MyApi:
             # Sleep for the rate limit duration
             await asyncio.sleep(RATE_LIMIT)
             return response.status_code
+
+    async def _ensure_lounge_worker(self) -> None:
+        """Ensure the lounge coalescing worker is running."""
+        async with self._lounge_queue_lock:
+            if self._lounge_worker_task and not self._lounge_worker_task.done():
+                return
+            self._lounge_worker_task = asyncio.create_task(self._lounge_worker())
+
+    async def _lounge_worker(self) -> None:
+        """Send only the latest pending lounge payload."""
+        while True:
+            await asyncio.sleep(0.08)
+            async with self._lounge_queue_lock:
+                pending = self._lounge_pending_write
+                self._lounge_pending_write = None
+            if pending is None:
+                break
+
+            payload, waiter = pending
+            status = await self._post_data("ambilight/lounge", payload)
+            if not waiter.done():
+                waiter.set_result(status)
+
+    async def _send_lounge_coalesced(self, data: Any) -> int:
+        """Queue lounge writes and keep only latest pending write."""
+        loop = asyncio.get_running_loop()
+        waiter = loop.create_future()
+        async with self._lounge_queue_lock:
+            replaced = self._lounge_pending_write
+            self._lounge_pending_write = (data, waiter)
+            if replaced is not None:
+                _, replaced_waiter = replaced
+                if not replaced_waiter.done():
+                    # Replaced by a newer request; treat as handled.
+                    replaced_waiter.set_result(204)
+        await self._ensure_lounge_worker()
+        return await waiter
+
+    async def send_data(self, endpoint: str, data: Any) -> int:
+        """Send data to the API."""
+        if endpoint == "ambilight/lounge":
+            return await self._send_lounge_coalesced(data)
+        return await self._post_data(endpoint, data)
 
     async def _cancel_active_transition(self) -> None:
         """Cancel an active transition so a newer request can take over."""
