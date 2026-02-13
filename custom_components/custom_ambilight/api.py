@@ -65,7 +65,6 @@ class MyApi:
     async def get_data(self) -> Any:
         """Fetch data from the API."""
         endpoint = f"{self.url}/ambilight/currentconfiguration"
-        previous_data = self._data
         try:
             response = await self.client.get(endpoint)
             await asyncio.sleep(RATE_LIMIT)
@@ -120,50 +119,11 @@ class MyApi:
             # Don't restore state if turn_on is already in progress to avoid recursion
             if self._turn_on_in_progress:
                 return self._data
-            # Recover the state from the data before the glitch response.
-            recovered_brightness = None
-            recovered_hs_color = None
-            recovered_effect = None
-            if previous_data:
-                if (
-                    previous_data.get("styleName") == "Lounge light"
-                    and previous_data.get("isExpert") == True
-                ):
-                    previous_color = previous_data.get("colorSettings", {}).get("color", {})
-                    recovered_brightness = previous_color.get("brightness")
-                    previous_hue = previous_color.get("hue")
-                    previous_saturation = previous_color.get("saturation")
-                    if previous_hue is not None and previous_saturation is not None:
-                        recovered_hs_color = (
-                            round((previous_hue / 255) * 360),
-                            round((previous_saturation / 255) * 100),
-                        )
-                elif previous_data.get("styleName") != "OFF":
-                    previous_menu_setting = previous_data.get("menuSetting")
-                    if previous_menu_setting is not None:
-                        recovered_effect = self.EFFECTS.get(
-                            previous_menu_setting,
-                            {"friendly_name": previous_menu_setting},
-                        )["friendly_name"]
-
-            # Keep any older cached values as fallback when a field is still unknown.
-            old_previous_state = self.previous_state or {}
+            # If it does, save the previous state
             self.previous_state = {
-                "brightness": (
-                    recovered_brightness
-                    if recovered_brightness is not None
-                    else old_previous_state.get("brightness")
-                ),
-                "hs_color": (
-                    recovered_hs_color
-                    if recovered_hs_color is not None
-                    else old_previous_state.get("hs_color")
-                ),
-                "effect": (
-                    recovered_effect
-                    if recovered_effect is not None
-                    else old_previous_state.get("effect")
-                ),
+                "brightness": self.get_brightness(),
+                "hs_color": self.get_hs_color(),
+                "effect": self.get_effect(),
             }
             # Reset the connection
             await self.client.aclose()
@@ -171,7 +131,10 @@ class MyApi:
                 auth=httpx.DigestAuth(self.username, self.password), verify=False
             )
             # Restore the previous state
-            if any(value is not None for value in self.previous_state.values()):
+            if any(
+                key in self.previous_state
+                for key in [ATTR_BRIGHTNESS, ATTR_HS_COLOR, ATTR_EFFECT]
+            ):
                 await self.turn_on(**self.previous_state)
             else:
                 await self.turn_off()
@@ -407,11 +370,7 @@ class MyApi:
                 # Determine the hue and saturation values
                 if kwargs.get(ATTR_HS_COLOR):
                     hue, saturation = kwargs.get(ATTR_HS_COLOR)
-                elif (
-                    current_hs_color
-                    and current_hs_color[0] is not None
-                    and current_hs_color[1] is not None
-                ):
+                elif current_hs_color:
                     # If color is not provided but current_hs_color is not None, use the previous values
                     hue, saturation = current_hs_color
                 elif self.previous_state and self.previous_state.get("hs_color"):
@@ -423,38 +382,12 @@ class MyApi:
                     hue, saturation = 0, 0
 
                 if transition_seconds > 0:
-                    previous_hs_color = (
-                        self.previous_state.get("hs_color")
-                        if self.previous_state
-                        else None
-                    )
-                    has_current_hs = (
-                        current_hs_color
-                        and current_hs_color[0] is not None
-                        and current_hs_color[1] is not None
-                    )
-                    has_previous_hs = (
-                        previous_hs_color
-                        and previous_hs_color[0] is not None
-                        and previous_hs_color[1] is not None
-                    )
-
-                    use_previous_as_start = False
-                    if has_current_hs and has_previous_hs:
-                        # Some TVs intermittently report (0,0) as a transient default.
-                        # Avoid starting the transition from this fallback color.
-                        if (
-                            int(round(current_hs_color[0])) == 0
-                            and int(round(current_hs_color[1])) == 0
-                            and float(previous_hs_color[1]) > 0
-                            and float(saturation) > 0
-                        ):
-                            use_previous_as_start = True
-
-                    if has_current_hs and not use_previous_as_start:
+                    if current_hs_color:
                         start_hs_hue, start_hs_saturation = current_hs_color
-                    elif has_previous_hs:
-                        start_hs_hue, start_hs_saturation = previous_hs_color
+                    elif self.previous_state and self.previous_state.get("hs_color"):
+                        start_hs_hue, start_hs_saturation = self.previous_state.get(
+                            "hs_color"
+                        )
                     else:
                         start_hs_hue, start_hs_saturation = hue, saturation
 
@@ -541,8 +474,8 @@ class MyApi:
                 
                 # Save the current color and brightness for later use (e.g., when switching to effect mode)
                 # Convert back from 0-255 range to 0-360/0-100 range for storage
-                stored_hue = int(round(hue)) % 360
-                stored_saturation = max(0, min(100, int(round(saturation))))
+                stored_hue = round(hue)
+                stored_saturation = round(saturation)
                 self.previous_state = {
                     "brightness": brightness,
                     "hs_color": (stored_hue, stored_saturation),
