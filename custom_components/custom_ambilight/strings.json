@@ -18,6 +18,15 @@
       "already_configured": "[%key:common::config_flow::abort::already_configured_device%]"
     }
   },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "lounge_min_interval_ms": "Lounge write interval (ms)"
+        }
+      }
+    }
+  },
   "entity": {
     "light": {
       "ambilight": {

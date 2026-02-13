@@ -20,6 +20,11 @@ from homeassistant.components.light import (
 )
 from homeassistant.helpers.update_coordinator import UpdateFailed
 
+from .const import (
+    DEFAULT_LOUNGE_MIN_INTERVAL_MS,
+    MAX_LOUNGE_MIN_INTERVAL_MS,
+    MIN_LOUNGE_MIN_INTERVAL_MS,
+)
 from .effects import EFFECTS
 
 _LOGGER = logging.getLogger(__name__)
@@ -34,7 +39,14 @@ CONNECTION_UNKNOWN = "unknown"
 class MyApi:
     """The Custom Ambilight API."""
 
-    def __init__(self, host: str, connection_type: str, username: str = None, password: str = None) -> None:
+    def __init__(
+        self,
+        host: str,
+        connection_type: str,
+        username: str = None,
+        password: str = None,
+        lounge_min_interval_ms: int = DEFAULT_LOUNGE_MIN_INTERVAL_MS,
+    ) -> None:
         """Initialise the API."""
         self.host = host
         self.connection_type = connection_type
@@ -60,7 +72,11 @@ class MyApi:
         self._last_successful_lounge_payload = None
         self._lounge_failure_count = 0
         self._lounge_cooldown_until = 0.0
-        self._lounge_min_interval_seconds = 0.7
+        interval_ms = max(
+            MIN_LOUNGE_MIN_INTERVAL_MS,
+            min(MAX_LOUNGE_MIN_INTERVAL_MS, int(lounge_min_interval_ms)),
+        )
+        self._lounge_min_interval_seconds = interval_ms / 1000.0
         self._lounge_last_sent_at = 0.0
 
     @staticmethod

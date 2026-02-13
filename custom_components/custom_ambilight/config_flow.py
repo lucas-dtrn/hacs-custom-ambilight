@@ -18,7 +18,13 @@ from .api import (
     CONNECTION_OK,
     MyApi,
 )
-from .const import DOMAIN
+from .const import (
+    CONF_LOUNGE_MIN_INTERVAL_MS,
+    DEFAULT_LOUNGE_MIN_INTERVAL_MS,
+    DOMAIN,
+    MAX_LOUNGE_MIN_INTERVAL_MS,
+    MIN_LOUNGE_MIN_INTERVAL_MS,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -73,6 +79,13 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Custom Ambilight."""
 
     VERSION = 1
+
+    @staticmethod
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> config_entries.OptionsFlow:
+        """Get the options flow for this handler."""
+        return OptionsFlowHandler(config_entry)
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -148,3 +161,36 @@ class InvalidAuth(HomeAssistantError):
 
 class UnknownConnectionError(HomeAssistantError):
     """Error to indicate an unexpected API response."""
+
+
+class OptionsFlowHandler(config_entries.OptionsFlow):
+    """Handle options flow for Custom Ambilight."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        """Initialize options flow."""
+        self.config_entry = config_entry
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Manage integration options."""
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        default_interval = self.config_entry.options.get(
+            CONF_LOUNGE_MIN_INTERVAL_MS, DEFAULT_LOUNGE_MIN_INTERVAL_MS
+        )
+        options_schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_LOUNGE_MIN_INTERVAL_MS, default=default_interval
+                ): vol.All(
+                    vol.Coerce(int),
+                    vol.Range(
+                        min=MIN_LOUNGE_MIN_INTERVAL_MS,
+                        max=MAX_LOUNGE_MIN_INTERVAL_MS,
+                    ),
+                )
+            }
+        )
+        return self.async_show_form(step_id="init", data_schema=options_schema)

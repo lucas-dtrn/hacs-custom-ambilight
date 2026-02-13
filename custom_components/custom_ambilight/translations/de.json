@@ -45,5 +45,14 @@
                 }
             }
         }
+    },
+    "options": {
+        "step": {
+            "init": {
+                "data": {
+                    "lounge_min_interval_ms": "Lounge-Schreibintervall (ms)"
+                }
+            }
+        }
     }
 }

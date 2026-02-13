@@ -17,7 +17,7 @@ from .api import (
     CONNECTION_UNKNOWN,
     MyApi,
 )
-from .const import DOMAIN
+from .const import CONF_LOUNGE_MIN_INTERVAL_MS, DEFAULT_LOUNGE_MIN_INTERVAL_MS, DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,7 +29,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     hass.data.setdefault(DOMAIN, {})
 
     # Create API instance with host, connection type, username, and password from the config entry
-    api = MyApi(entry.data["host"], entry.data["type"], entry.data.get("username"), entry.data.get("password"))
+    api = MyApi(
+        entry.data["host"],
+        entry.data["type"],
+        entry.data.get("username"),
+        entry.data.get("password"),
+        entry.options.get(CONF_LOUNGE_MIN_INTERVAL_MS, DEFAULT_LOUNGE_MIN_INTERVAL_MS),
+    )
 
     # Validate the API connection
     connection_status = await api.get_connection_status()
@@ -60,6 +66,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Store the data update coordinator for your platforms to access
     coordinator.api = api
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
     hass.data[DOMAIN][entry.entry_id] = coordinator
 
     # Forward the entry setup to the platforms
@@ -73,6 +80,11 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         hass.data[DOMAIN].pop(entry.entry_id)
 
     return unload_ok
+
+
+async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Handle config entry options update."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 #
