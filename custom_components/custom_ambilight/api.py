@@ -2,6 +2,7 @@
 
 import asyncio
 import colorsys
+from contextlib import suppress
 from base64 import b64decode
 from json import JSONDecodeError
 import logging
@@ -47,6 +48,8 @@ class MyApi:
         self.previous_state = None
         self._data = {}
         self._turn_on_in_progress = False
+        self._transition_task = None
+        self._last_transition_color = None
 
     @staticmethod
     def _truncate_text(value: str, max_len: int = 200) -> str:
@@ -185,6 +188,17 @@ class MyApi:
         # Sleep for the rate limit duration
         await asyncio.sleep(RATE_LIMIT)
         return response.status_code
+
+    async def _cancel_active_transition(self) -> None:
+        """Cancel an active transition so a newer request can take over."""
+        current_task = asyncio.current_task()
+        task = self._transition_task
+        if task and task is not current_task and not task.done():
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+        if self._transition_task and self._transition_task.done():
+            self._transition_task = None
 
     @staticmethod
     def _build_color_data(hue: int, saturation: int, brightness: int) -> dict[str, Any]:
@@ -364,9 +378,6 @@ class MyApi:
 
     async def turn_on(self, **kwargs):
         """Turn the light on."""
-        # Prevent recursive calls
-        if self._turn_on_in_progress:
-            return
         self._turn_on_in_progress = True
         
         try:
@@ -379,6 +390,7 @@ class MyApi:
                 transition = kwargs.get(ATTR_TRANSITION)
                 transition_seconds = float(transition) if transition is not None else 0.0
                 transition_seconds = max(0.0, transition_seconds)
+                await self._cancel_active_transition()
 
                 # If the light is off, power it on directly.
                 # Avoid switching through FOLLOW_VIDEO/NATURAL, as that can
@@ -421,6 +433,7 @@ class MyApi:
                     hue, saturation = 0, 0
 
                 if transition_seconds > 0:
+                    self._transition_task = asyncio.current_task()
                     previous_hs_color = (
                         self.previous_state.get("hs_color")
                         if self.previous_state
@@ -437,6 +450,13 @@ class MyApi:
                         and previous_hs_color[1] is not None
                     )
 
+                    start_from_last_transition = (
+                        self._last_transition_color
+                        and self._last_transition_color[0] is not None
+                        and self._last_transition_color[1] is not None
+                        and self._last_transition_color[2] is not None
+                    )
+
                     use_previous_as_start = False
                     if has_current_hs and has_previous_hs:
                         # Some TVs intermittently report (0,0) as a transient default.
@@ -449,14 +469,19 @@ class MyApi:
                         ):
                             use_previous_as_start = True
 
-                    if has_current_hs and not use_previous_as_start:
+                    if start_from_last_transition:
+                        start_hs_hue = round((self._last_transition_color[0] / 255) * 360)
+                        start_hs_saturation = round((self._last_transition_color[1] / 255) * 100)
+                    elif has_current_hs and not use_previous_as_start:
                         start_hs_hue, start_hs_saturation = current_hs_color
                     elif has_previous_hs:
                         start_hs_hue, start_hs_saturation = previous_hs_color
                     else:
                         start_hs_hue, start_hs_saturation = hue, saturation
 
-                    if current_brightness is not None:
+                    if start_from_last_transition:
+                        start_brightness = self._last_transition_color[2]
+                    elif current_brightness is not None:
                         start_brightness = current_brightness
                     elif self.previous_state and self.previous_state.get("brightness") is not None:
                         start_brightness = self.previous_state.get("brightness")
@@ -521,6 +546,11 @@ class MyApi:
                         if step_hue == 255:
                             # Normalize hue boundary to avoid wrap artifacts on some TVs.
                             step_hue = 0
+                        self._last_transition_color = (
+                            step_hue,
+                            step_saturation,
+                            step_brightness,
+                        )
                         await self.send_data(
                             "ambilight/lounge",
                             self._build_color_data(
@@ -532,6 +562,11 @@ class MyApi:
                 else:
                     target_hue = int((hue / 360) * 255)
                     target_saturation = int((saturation / 100) * 255)
+                    self._last_transition_color = (
+                        target_hue,
+                        target_saturation,
+                        brightness,
+                    )
                     await self.send_data(
                         "ambilight/lounge",
                         self._build_color_data(target_hue, target_saturation, brightness),
@@ -548,6 +583,7 @@ class MyApi:
                 }
 
             elif kwargs.get(ATTR_EFFECT):
+                await self._cancel_active_transition()
                 friendly_name = kwargs.get(ATTR_EFFECT)
                 for effect in self.EFFECTS.values():
                     if effect["friendly_name"] == friendly_name:
@@ -601,10 +637,13 @@ class MyApi:
                     return
             # If light is already on and no kwargs provided, do nothing
         finally:
+            if self._transition_task is asyncio.current_task():
+                self._transition_task = None
             self._turn_on_in_progress = False
 
     async def turn_off(self):
         """Turn the light off."""
+        await self._cancel_active_transition()
         # Store the current Home Assistant-reported state before turning off the light
         # Use brightness from get_brightness() if available, otherwise keep previous brightness
         current_brightness = self.get_brightness()
