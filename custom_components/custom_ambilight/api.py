@@ -855,8 +855,12 @@ class MyApi:
                 self._transition_task = None
             self._turn_on_in_progress = False
 
-    async def turn_off(self):
+    async def turn_off(self, **kwargs):
         """Turn the light off."""
+        transition = kwargs.get(ATTR_TRANSITION)
+        transition_seconds = float(transition) if transition is not None else 0.0
+        transition_seconds = max(0.0, transition_seconds)
+
         await self._cancel_active_transition()
         # Store the current Home Assistant-reported state before turning off the light
         # Use brightness from get_brightness() if available, otherwise keep previous brightness
@@ -864,18 +868,33 @@ class MyApi:
         if current_brightness is None and self.previous_state and self.previous_state.get("brightness") is not None:
             # If brightness is not available but we have a previous brightness, use that
             current_brightness = self.previous_state.get("brightness")
-        
+
         # Use hs_color from get_hs_color() if available, otherwise keep previous hs_color
         current_hs_color = self.get_hs_color()
         if current_hs_color is None and self.previous_state and self.previous_state.get("hs_color") is not None:
             # If hs_color is not available but we have a previous hs_color, use that
             current_hs_color = self.previous_state.get("hs_color")
-        
+
         # Always save the brightness and color, even if they are None (will use defaults on turn_on)
         self.previous_state = {
             "brightness": current_brightness,
             "hs_color": current_hs_color,
             "effect": self.get_effect(),
         }
+
+        if transition_seconds > 0 and self.get_is_on():
+            # Fade to brightness 0 using the same transition logic as turn_on, then power off
+            await self.turn_on(
+                brightness=0,
+                hs_color=current_hs_color if current_hs_color else (0, 0),
+                transition=transition_seconds,
+            )
+            # turn_on overwrote previous_state; restore for next turn_on
+            self.previous_state = {
+                "brightness": current_brightness,
+                "hs_color": current_hs_color,
+                "effect": self.get_effect(),
+            }
+
         # Turn off the light
         await self.send_data("ambilight/power", {"power": "off"})

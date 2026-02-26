@@ -152,10 +152,10 @@ class CustomAmbilightLight(CoordinatorEntity, LightEntity):
         # Refresh after to update the state
         await self.coordinator.async_refresh()
 
-    async def async_turn_off(self):
+    async def async_turn_off(self, **kwargs):
         """Turn the light off."""
         try:
-            await self.api.turn_off()
+            await self.api.turn_off(**kwargs)
         except Exception as err:  # pylint: disable=broad-except
             _LOGGER.warning("Failed to turn off Ambilight light: %s", err)
         # Refresh after to update the state
